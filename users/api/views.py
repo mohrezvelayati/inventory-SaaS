@@ -15,6 +15,9 @@ class RegisterView(generics.CreateAPIView):
 
 
 class MeView(generics.RetrieveAPIView):
+    """
+    This view is for retrieving the currently authenticated user's information
+    """
     queryset = User.objects.all()
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
