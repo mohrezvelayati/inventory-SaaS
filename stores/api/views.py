@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from stores.models import StoreMembership
 from stores.api.serializers import StoreSerializer, MembershipSerializer
-from stores.permissions import IsStoreOwner
+from stores.permissions import IsStoreManager
 from stores.services import create_store_with_membership
 
 
@@ -26,7 +26,7 @@ class StoreMembershipCreateView(generics.CreateAPIView):
     This view is for creating a new membership for the currently authenticated user's store
     """
     serializer_class = MembershipSerializer
-    permission_classes = [IsAuthenticated, IsStoreOwner]
+    permission_classes = [IsAuthenticated, IsStoreManager]
 
     def perform_create(self, serializer):
         serializer.save(store=self.request.user.memberships.first().store)  # Assuming the user is a member of only one store for simplicity
@@ -38,7 +38,7 @@ class MembershipListView(generics.ListAPIView):
     This view is for listing all memberships of the currently authenticated user's store
     """
     serializer_class = MembershipSerializer
-    permission_classes = [IsAuthenticated, IsStoreOwner]
+    permission_classes = [IsAuthenticated, IsStoreManager]
 
     def get_queryset(self):
         membership = self.request.user.memberships.first()  # Assuming the user is a member of only one store for simplicity

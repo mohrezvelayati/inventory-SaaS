@@ -3,7 +3,7 @@ from rest_framework.permissions import BasePermission
 from stores.models import StoreMembership
 
 
-class IsStoreOwner(BasePermission):
+class IsStoreManager(BasePermission):
     """
     Custom permission to only allow store managers to access certain views.
     """
