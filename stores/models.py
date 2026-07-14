@@ -31,3 +31,34 @@ class StoreMembership(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.store.name} ({self.role})"
+    
+
+
+class Permission(models.Model):
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+    
+
+
+
+class MembershipPermission(models.Model):
+    membership = models.ForeignKey(StoreMembership, on_delete=models.CASCADE, related_name='permissions')
+    permission = models.ForeignKey(Permission, on_delete=models.CASCADE, related_name='memberships')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['membership', 'permission'],
+                name='unique_membership_permission'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.membership} - {self.permission.name}"

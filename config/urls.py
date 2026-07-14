@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django.urls import path, include
+
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
 
 
 
@@ -21,4 +23,7 @@ urlpatterns = [
 
     # Stores app endpoints
     path('api/v1/stores/', include('stores.api.urls')),
+
+    # Catalog app endpoints
+    path('api/v1/catalog/', include('catalog.api.urls')),
 ]

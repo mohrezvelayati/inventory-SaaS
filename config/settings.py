@@ -42,8 +42,10 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'drf_spectacular',
 
+
     'users',
     'stores',
+    'catalog',
 ]
 
 MIDDLEWARE = [
@@ -156,7 +158,9 @@ REST_FRAMEWORK = {
     ],
 
     "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework.authentication.SessionAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+
     ),
 
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
@@ -164,7 +168,7 @@ REST_FRAMEWORK = {
 
 # Swagger Configuration
 SPECTACULAR_SETTINGS = {
-    "TITLE": "My API",
+    "TITLE": "Inventory API",
     "DESCRIPTION": "API Documentation",
     "VERSION": "1.0.0",
 }

@@ -1,16 +1,28 @@
 from rest_framework.permissions import BasePermission
+from rest_framework.exceptions import PermissionDenied
 
-from stores.models import StoreMembership
+from stores.services import get_user_stores
+from stores.models import MembershipPermission
 
 
-class IsStoreManager(BasePermission):
+class CanCreateProduct(BasePermission):
     """
-    Custom permission to only allow store managers to access certain views.
+    Custom permission to check if the user has the permission to create a product in their store.
     """
+
+    permission_code = 'create_product'
 
     def has_permission(self, request, view):
-        # Check if the user is the owner of the store
-        return StoreMembership.objects.filter(
-            user=request.user,
-            role=StoreMembership.RoleChoices.MANAGER
+        user = request.user
+        memberships = user.memberships.first()
+
+        if not memberships:
+            return False
+        
+        if memberships.role == 'manager':
+            return True
+        
+        return MembershipPermission.objects.filter(
+            membership=memberships,
+            permission__code=self.permission_code
         ).exists()
