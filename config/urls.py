@@ -29,4 +29,7 @@ urlpatterns = [
 
     # Inventory app endpoints
     path('api/v1/inventory/', include('inventory.api.urls')),
+
+    # Sales app endpoints
+    path('api/v1/sales/', include('sales.api.urls')),
 ]
