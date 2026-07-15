@@ -26,4 +26,7 @@ urlpatterns = [
 
     # Catalog app endpoints
     path('api/v1/catalog/', include('catalog.api.urls')),
+
+    # Inventory app endpoints
+    path('api/v1/inventory/', include('inventory.api.urls')),
 ]
