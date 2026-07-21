@@ -22,24 +22,6 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 
-class ProductVariantSerializer(serializers.ModelSerializer):    
-    
-    class Meta:
-        model = ProductVariant
-        
-        fields = [
-                'id',
-                'size',
-                'purchase_price',
-                'sale_price',
-                'current_stock'
-            ]
-
-        read_only_fields = ['id', 'current_stock']
-
-
-
-
 class ProductVariantSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -57,3 +39,4 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             'id',
             'current_stock',
         ]
+    
