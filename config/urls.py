@@ -34,5 +34,8 @@ urlpatterns = [
     path('api/v1/sales/', include('sales.api.urls')),
 
     # Customers app endpoints
-    path('api/v1/customers/', include('customers.api.urls'))
+    path('api/v1/customers/', include('customers.api.urls')),
+
+    # Wanted app endpoints
+    path('api/v1/wanted/', include('wanted.api.urls')),
 ]
