@@ -38,4 +38,8 @@ urlpatterns = [
 
     # Wanted app endpoints
     path('api/v1/wanted/', include('wanted.api.urls')),
+
+
+    # Dashboard app endpoints
+    path('api/v1/dashboard/', include('dashboard.api.urls')),
 ]
