@@ -98,14 +98,14 @@ def validate_sale_stock(sale):
                 }
             )
 
-        if errors:
-            raise ValidationError(
-                {
-                    'stock_error':errors
-                }
-            )
-        
-        return True
+    if errors:
+        raise ValidationError(
+            {
+                'stock_error':errors
+            }
+        )
+    
+    return True
 
 
 
