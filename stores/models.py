@@ -27,7 +27,12 @@ class StoreMembership(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('store', 'user')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user'],
+                name='unique_store_membership_user',
+            )
+        ]
 
     def __str__(self):
         return f"{self.user.username} - {self.store.name} ({self.role})"
