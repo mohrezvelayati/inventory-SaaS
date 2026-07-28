@@ -146,11 +146,11 @@ Replace in these files:
 - [x] `dashboard/api/views.py`
 - [x] Remove or consolidate duplicate `dashboard/views.py`
 
-### Task 7.1: Enforce One Membership Per User
+### Task 7.1: Enforce One Membership Per User 🟡
 
-- [ ] Reject creation of a second store or membership through the API.
-- [ ] Add a data migration that handles existing duplicate memberships.
-- [ ] Add a database uniqueness constraint on `StoreMembership.user`.
+- [x] Reject creation of a second store or membership through the API.
+- [x] Add a data migration that handles existing duplicate memberships.
+- [x] Add a database uniqueness constraint on `StoreMembership.user`.
 - [ ] Test the rule at both API and database levels.
 
 ### Task 8: Scope Sale Customer Input to Store
