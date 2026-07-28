@@ -1,10 +1,10 @@
 from django.db import transaction
 from django.db.models import Sum
+from django.core.exceptions import ValidationError
 
 from sales.models import Sale, SaleItem
 from inventory.services import create_inventory_movement
-from django.core.exceptions import ValidationError
-
+from catalog.models import ProductVariant
 
 
 ### Create empty sale (Draft) ###
@@ -80,20 +80,20 @@ def update_sale_total(sale):
 
 
 ### Stock Validation ###
-def validate_sale_stock(sale):
-    """
-    Check if all sale items have enough stock
-    """
+def validate_sale_stock(*, required_quantities, locked_variants):
     errors = []
 
-    for item in sale.items.select_related('variant'):
-        available_stock = item.variant.current_stock
-        if available_stock < item.quantity:
+    for requirement in required_quantities:
+        variant = locked_variants[requirement['variant_id']]
+        requested_quantity = requirement['quantity']
+        available_stock = variant.current_stock
+
+        if available_stock < requested_quantity:
             errors.append(
                 {
-                    "variant": item.variant.id,
-                    "product": item.variant.product.name,
-                    "requested": item.quantity,
+                    "variant": variant.id,
+                    "product": variant.product.name,
+                    "requested": requested_quantity,
                     "available": available_stock,
                 }
             )
@@ -112,6 +112,8 @@ def validate_sale_stock(sale):
 ### Complete Sale ###
 @transaction.atomic
 def complete_sale(*, sale, user):
+    sale = Sale.objects.select_for_update().get(pk=sale.pk) # Fetch and lock the sale to prevent concurrent completion
+
     if sale.status != Sale.StatusChoices.DRAFT :
         raise ValidationError(
             "فقط فروش درحال تکمیل می‌تواند تکمیل شود"
@@ -123,16 +125,41 @@ def complete_sale(*, sale, user):
         raise ValidationError(
             "نمی‌توان فروش خالی را تکمیل کرد"
         )
+
+    required_quantities = list(
+        items.values('variant_id')
+        .annotate(quantity=Sum('quantity'))
+        .order_by('variant_id')
+    )
+
+    variant_ids = [
+        row['variant_id']
+        for row in required_quantities
+    ]
+
+
+    locked_variants = {
+        variant.id: variant
+        for variant in (
+            ProductVariant.objects
+            .select_for_update()
+            .select_related('product')
+            .filter(id__in=variant_ids)
+            .order_by('id')
+        )
+    }
+
     
     validate_sale_stock(
-        sale
-    )
+        required_quantities=required_quantities,
+        locked_variants=locked_variants,
+        )
 
     # کاهش موجودی
     for item in items:
         create_inventory_movement(
-            variant=item.variant,
-            quantity=item.quantity,
+            variant=locked_variants[item.variant_id],
+            quantity=-item.quantity,
             movement_type='sale',
             user=user,
             note=f"Sale #{sale.id}"
@@ -140,9 +167,7 @@ def complete_sale(*, sale, user):
 
     sale.status = Sale.StatusChoices.COMPLETED
 
-    sale.save(
-        update_fields = ['status']
-    )
+    sale.save(update_fields = ['status'])
 
     return sale
 
@@ -150,7 +175,7 @@ def complete_sale(*, sale, user):
 
 ### Cancel Sale ###
 @transaction.atomic
-def cansel_sale(*, sale):
+def cancel_sale(*, sale):
     if sale.status != Sale.StatusChoices.DRAFT:
         raise ValidationError(
             "فقط فروش درحال تکمیل می‌تواند کنسل شود"

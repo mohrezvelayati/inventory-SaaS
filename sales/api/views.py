@@ -3,11 +3,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 
 
 from sales.api.serializers import SaleCreateSerializer, SaleSerializer, SaleItemCreateSerializer
 from sales.services import create_sale, add_sale_item, complete_sale
 from sales.models import Sale
+from stores.services import get_current_membership, MembershipResolutionError
 
 
 
@@ -33,21 +36,24 @@ class SaleCreateView(CreateAPIView):
 
 
 
-class SaleItemCreateView(
-    generics.CreateAPIView
-):
+class SaleItemCreateView(generics.CreateAPIView):
 
     serializer_class = SaleItemCreateSerializer
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = [IsAuthenticated]
 
 
     def perform_create(self, serializer):
 
-        sale = Sale.objects.get(
-            id=self.kwargs["sale_id"]
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError:
+            raise Http404("Sale not found.")
+
+        sale = get_object_or_404(
+            Sale.objects.select_related("store"),
+            id=self.kwargs["sale_id"],
+            store=membership.store,
         )
 
 
@@ -65,22 +71,26 @@ class SaleItemCreateView(
 
 class SaleCompleteView(APIView):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = [IsAuthenticated]
 
 
-    def post(self,request,sale_id):
+    def post(self, request, sale_id):
 
-        sale = Sale.objects.get(id=sale_id)
-        membership = (request.user.memberships.first())
-        complete_sale(sale=sale,user=request.user)
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError:
+            raise Http404("Sale not found.")
+
+        sale = get_object_or_404(
+            Sale.objects.select_related("store"),
+            id=sale_id,
+            store=membership.store,
+        )
+
+        complete_sale(sale=sale, user=request.user)
 
         return Response(
-            {
-                "message":
-                "Sale completed successfully"
-            },
+            {"message": "Sale completed successfully"},
             status=status.HTTP_200_OK
         )
     
