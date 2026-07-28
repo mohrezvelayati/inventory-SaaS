@@ -133,18 +133,18 @@ For the MVP, never choose an arbitrary or deterministic "first" store.
 Also replace or remove the broken `get_user_stores()` implementation, which
 currently fetches the first membership globally instead of filtering by user.
 
-### Task 7: Replace All `.memberships.first()` Calls
+### Task 7: Replace All `.memberships.first()` Calls 🟡
 Replace in these files:
-- [ ] `stores/api/views.py`
-- [ ] `stores/permissions.py`
-- [ ] `catalog/api/views.py`
-- [ ] `catalog/permissions.py`
-- [ ] `inventory/api/views.py`
-- [ ] `sales/api/views.py`
-- [ ] `customers/api/views.py`
-- [ ] `wanted/api/views.py`
-- [ ] `dashboard/api/views.py`
-- [ ] Remove or consolidate duplicate `dashboard/views.py`
+- [x] `stores/api/views.py`
+- [x] `stores/permissions.py`
+- [x] `catalog/api/views.py`
+- [x] `catalog/permissions.py`
+- [x] `inventory/api/views.py`
+- [x] `sales/api/views.py`
+- [x] `customers/api/views.py`
+- [x] `wanted/api/views.py`
+- [x] `dashboard/api/views.py`
+- [x] Remove or consolidate duplicate `dashboard/views.py`
 
 ### Task 7.1: Enforce One Membership Per User
 
