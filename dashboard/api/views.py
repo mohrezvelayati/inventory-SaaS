@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.http import Http404
 
 from django.utils import timezone
 
@@ -9,7 +10,7 @@ from dashboard.services.sales import get_sales_overview
 from dashboard.services.inventory import get_inventory_overview, get_low_stock_products
 from dashboard.services.products import get_top_products
 from dashboard.services.wanted import get_top_wanted
-
+from stores.services import get_current_membership, MembershipResolutionError
 
 
 
@@ -21,9 +22,10 @@ class DashboardView(APIView):
 
 
     def get(self, request):
-
-        membership = (request.user.memberships.first())
-
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
 
         store = membership.store
 
