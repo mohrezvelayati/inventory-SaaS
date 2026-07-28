@@ -30,7 +30,9 @@ errors.
 
 ## 🔴 PHASE 1: Critical Security Fixes (Do First)
 
-### Task 1: Fix `validate_sale_stock()` Bug
+> 🟡 Implementation is complete; tests are deferred to Phase 7.
+
+### Task 1: Fix `validate_sale_stock()` Bug 🟡
 **File**: `sales/services.py` line 83-108
 **Problem**: Both the `if errors` block and `return True` are inside the loop,
 so validation stops after the first item. Move both outside the loop.
@@ -50,11 +52,11 @@ if errors:
 return True
 ```
 
-### Task 1.1: Aggregate Duplicate Variants During Validation
+### Task 1.1: Aggregate Duplicate Variants During Validation 🟡
 If the same variant appears on multiple sale lines, validate the combined
 quantity. Two individually valid lines must not be able to oversell stock.
 
-### Task 2: Scope `SaleItemCreateView` to the Store
+### Task 2: Scope `SaleItemCreateView` to the Store 🟡
 **File**: `sales/api/views.py` line 47-62
 **Problem**: `Sale.objects.get(id=sale_id)` doesn't verify the sale belongs to the user's store.
 ```python
@@ -67,12 +69,12 @@ sale = get_object_or_404(
 Fetch through a scoped queryset rather than fetching globally and comparing
 afterward.
 
-### Task 3: Scope `SaleCompleteView` to the Store
+### Task 3: Scope `SaleCompleteView` to the Store 🟡
 **File**: `sales/api/views.py` line 73-85
 Use the same scoped lookup as Task 2, adapted to the `request` and `sale_id`
 arguments already supplied to `post()`.
 
-### Task 4: Fix and Centralize Permission Resolution
+### Task 4: Fix and Centralize Permission Resolution 🟡
 **Files**: `stores/permissions.py`, `catalog/permissions.py`
 
 `HasPermission` already queries `MembershipPermission` using the correct
@@ -87,18 +89,18 @@ MembershipPermission.objects.filter(
 ).exists()
 ```
 
-### Task 5: Fix `cansel_sale` Typo
+### Task 5: Fix `cansel_sale` Typo ✅
 **File**: `sales/services.py` line 153
 Rename `cansel_sale` → `cancel_sale`
 
-### Task 5.1: Fix Reversed Sale Stock Updates
+### Task 5.1: Fix Reversed Sale Stock Updates 🟡
 **Files**: `sales/services.py`, `inventory/services.py`
 
 `create_inventory_movement()` adds its quantity to stock, but
 `complete_sale()` currently passes a positive sale quantity. Pass a negative
 quantity for sale movements and test that checkout decreases stock.
 
-### Task 5.2: Make Checkout Concurrency-Safe
+### Task 5.2: Make Checkout Concurrency-Safe 🟡
 Inside one `transaction.atomic()` block:
 
 - Lock the draft Sale with `select_for_update()`.
@@ -114,7 +116,7 @@ the same sale against PostgreSQL.
 
 ## 🟠 PHASE 2: Tenant Isolation Foundation
 
-### Task 6: Create `get_current_membership()` Helper
+### Task 6: Create `get_current_membership()` Helper 🟡
 **File**: `stores/services.py`
 ```python
 def get_current_membership(user):
