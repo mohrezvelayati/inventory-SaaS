@@ -1,12 +1,14 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
-from stores.permissions import CanCreateProduct
-from catalog.permissions import CanCreateVariant
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 
+from catalog.permissions import CanCreateVariant
 from catalog.models import Category, Product
 from catalog.api.serializers import CategorySerializer, ProductSerializer, ProductVariantSerializer
 from catalog.services import create_category, create_product, create_variant
-
+from stores.permissions import CanCreateProduct
+from stores.services import get_current_membership, MembershipResolutionError
 
 
 
@@ -17,17 +19,26 @@ class CategoryListCreateView(generics.ListCreateAPIView):
 
 
     def get_queryset(self):
-        # Return categories for the authenticated user's store
-        return Category.objects.filter(store__memberships__user=self.request.user)
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        return Category.objects.filter(store=membership.store)
     
 
 
     def perform_create(self, serializer):
-        # Create a new category for the authenticated user's store
-        create_category(
-            store=self.request.user.memberships.first().store, # Assuming the user has a store membership and we take the first one
-            name=serializer.validated_data['name']
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        category = create_category(
+            store=membership.store,
+            name=serializer.validated_data['name'],
         )
+        serializer.instance = category
 
 
 
@@ -36,17 +47,24 @@ class ProductListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated, CanCreateProduct]  # Custom permission to check if the user can create products
 
     def get_queryset(self):
-        # Return products for the authenticated user's store
-        return Product.objects.filter(
-        store__memberships__user=self.request.user
-    )
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        return Product.objects.filter(store=membership.store)
+
     
     def perform_create(self, serializer):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
 
         categories = serializer.validated_data.get('categories', [])
 
         product = create_product(
-            store=self.request.user.memberships.first().store,
+            store=membership.store,
             name=serializer.validated_data['name'],
             description=serializer.validated_data.get('description', ''), # get description if provided, else default to empty string
             categories=categories
@@ -68,13 +86,15 @@ class ProductVariantCreateView(generics.CreateAPIView):
 
 
     def perform_create(self, serializer):
-        product_id = self.kwargs['product_id']
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
 
-        product = Product.objects.get(
-            id=product_id,
-            store__memberships__user=self.request.user
+        product = get_object_or_404(
+            Product.objects.filter(store=membership.store),
+            id=self.kwargs['product_id']
         )
-
 
         variant = create_variant(
             product=product,
