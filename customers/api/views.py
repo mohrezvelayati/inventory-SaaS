@@ -1,10 +1,10 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
-
+from django.http import Http404
 
 from customers.models import Customer
 from customers.api.serializers import CustomerSerializer
-
+from stores.services import get_current_membership, MembershipResolutionError
 
 
 
@@ -14,13 +14,17 @@ class CustomerListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Customer.objects.filter(
-            store__memberships__user=self.request.user
-        )
-    
-    def perform_create(self, serializer):
-        membership = self.request.user.memberships.first()
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
 
-        serializer.save(
-            store=membership.store
-        )
+        return Customer.objects.filter(store=membership.store)
+
+
+    def perform_create(self, serializer):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+        serializer.save(store=membership.store)

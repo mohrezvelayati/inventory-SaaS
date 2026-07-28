@@ -21,13 +21,16 @@ class SaleCreateView(CreateAPIView):
 
 
     def perform_create(self, serializer):
-        membership = self.request.user.memberships.first()
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
 
         sale = create_sale(
             store=membership.store,
             seller=membership,
             customer=serializer.validated_data.get('customer'),
-            channel=serializer.validated_data.get('channel'),
+            channel=serializer.validated_data['channel'],
             payment_method=serializer.validated_data.get('payment_method'),
         )
 
@@ -102,7 +105,11 @@ class SaleListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
 
         return Sale.objects.filter(
-            store__memberships__user=self.request.user
-        ).prefetch_related("items")
+            store=membership.store
+        ).prefetch_related('items')

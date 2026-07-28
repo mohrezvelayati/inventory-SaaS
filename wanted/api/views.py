@@ -1,11 +1,11 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
-
+from django.http import Http404
 
 from wanted.api.serializers import WantedSerializer
 from wanted.models import WantedProduct
 from wanted.services import create_wanted
-
+from stores.services import get_current_membership, MembershipResolutionError
 
 
 
@@ -15,13 +15,19 @@ class WantedListCreateView(generics.ListCreateAPIView):
 
 
     def get_queryset(self):
-        return WantedProduct.objects.filter(
-            store__memberships__user=self.request.user
-        )
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        return WantedProduct.objects.filter(store=membership.store)
     
 
     def perform_create(self, serializer):
-        membership = (self.request.user.memberships.first())
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
         wanted_product = create_wanted(
             store = membership.store,
             product = serializer.validated_data.get('product'),
