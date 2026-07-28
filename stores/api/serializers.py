@@ -9,6 +9,16 @@ class StoreSerializer(serializers.ModelSerializer):
         model = Store
         fields = ['id', 'name', 'created_at', 'updated_at']
 
+    def validate(self, attrs):
+        user = self.context['request'].user
+
+        if user.memberships.exists():
+            raise serializers.ValidationError(
+                'You already belong to a store'
+            )
+
+        return attrs
+
 
 
 class MembershipSerializer(serializers.ModelSerializer):
@@ -17,3 +27,12 @@ class MembershipSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoreMembership
         fields = ['id', 'store', 'user', 'role', 'created_at', 'updated_at']
+
+
+    def validate_user(self, user):
+        if user.memberships.exists():
+            raise serializers.ValidationError(
+                'This user already belongs to a store'
+            )
+
+        return user
