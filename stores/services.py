@@ -1,7 +1,30 @@
-from logging import exception
 from django.db import transaction
 
 from stores.models import Store, StoreMembership
+
+
+class MembershipResolutionError(Exception):
+    """Base error for resolving a user's single store membership."""
+
+
+class NoMembershipError(MembershipResolutionError):
+    """Raised when a user does not belong to a store."""
+
+
+class MultipleMembershipsError(MembershipResolutionError):
+    """Raised when a user belongs to more than one store."""
+
+
+def get_current_membership(user):
+    """
+    Return the user's only store membership.
+    """
+    try:
+        return user.memberships.select_related("store").get()
+    except StoreMembership.DoesNotExist as error:
+        raise NoMembershipError from error
+    except StoreMembership.MultipleObjectsReturned as error:
+        raise MultipleMembershipsError from error
 
 
 @transaction.atomic
@@ -22,10 +45,4 @@ def create_store_membership(*, store, user, role):
 
 
 def get_user_stores(user):
-    #
-    memberships = StoreMembership.objects.first()
-
-    if not memberships:
-        raise exception("User is not a member of any store.")
-    
-    return memberships.store
+    return get_current_membership(user).store

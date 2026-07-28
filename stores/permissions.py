@@ -1,7 +1,7 @@
 from rest_framework.permissions import BasePermission
 
-from stores.services import get_user_stores
-from stores.models import MembershipPermission
+from stores.services import get_current_membership, MembershipResolutionError
+from stores.models import MembershipPermission, StoreMembership
 
 
 
@@ -14,17 +14,16 @@ class CanCreateProduct(BasePermission):
     permission_code = 'create_product'
 
     def has_permission(self, request, view):
-        user = request.user
-        memberships = user.memberships.first()
-
-        if not memberships:
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError:
             return False
-        
-        if memberships.role == 'manager':
+
+        if membership.role == StoreMembership.RoleChoices.MANAGER:
             return True
         
         return MembershipPermission.objects.filter(
-            membership=memberships,
+            membership=membership,
             permission__code=self.permission_code
         ).exists()
     
@@ -36,14 +35,16 @@ class HasPermission(BasePermission):
     required_permission = None
 
     def has_permission(self, request, view):
-        membership = (request.user.memberships.first())
-
-        if not membership:
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError:
             return False
-        
-        # Manager has everything
-        if membership.role == 'manager':
+
+        if membership.role == StoreMembership.RoleChoices.MANAGER:
             return True
+
+        if self.required_permission is None:
+            return False
         
         return MembershipPermission.objects.filter(
             membership = membership,
