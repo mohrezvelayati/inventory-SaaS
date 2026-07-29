@@ -165,6 +165,7 @@ def complete_sale(*, sale, user):
     # کاهش موجودی
     for item in items:
         create_inventory_movement(
+            store=sale.store,
             variant=locked_variants[item.variant_id],
             quantity=-item.quantity,
             movement_type='sale',
