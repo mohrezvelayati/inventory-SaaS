@@ -165,7 +165,7 @@ validate ownership inside `create_sale()`.
 Set the variant relation queryset from the request's current store; also
 validate `variant.product.store == sale.store` inside `add_sale_item()`.
 
-### Task 10: Scope Inventory Variant Input to Store
+### Task 10: Scope Inventory Variant Input to Store 🟡
 **File**: `inventory/api/serializers.py`
 
 Set the relation queryset from the request's current store and repeat the
