@@ -6,24 +6,6 @@ from customers.models import Customer
 from stores.services import get_current_membership, MembershipResolutionError
 
 
-class SaleItemInputSerializer(serializers.Serializer):
-    variant = serializers.PrimaryKeyRelatedField(
-        queryset=ProductVariant.objects.all()
-    )
-
-    quantity = serializers.IntegerField(
-        min_value=1
-    )
-
-    discount = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=0,
-        required=False,
-        default=0
-    )
-
-
-
 
 class SaleItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='variant.product.name', read_only=True)
@@ -91,16 +73,29 @@ class SaleCreateSerializer(serializers.Serializer):
 class SaleItemCreateSerializer(serializers.Serializer):
 
     variant = serializers.PrimaryKeyRelatedField(
-        queryset=ProductVariant.objects.all()
+        queryset=ProductVariant.objects.none()
     )
-
     quantity = serializers.IntegerField(
         min_value=1
     )
-
     discount = serializers.DecimalField(
         max_digits=12,
         decimal_places=0,
         required=False,
         default=0
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError:
+            return
+
+        self.fields['variant'].queryset = ProductVariant.objects.filter(
+            product__store_id=membership.store_id
+        )

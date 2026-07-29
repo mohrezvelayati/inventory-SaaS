@@ -29,15 +29,21 @@ def create_sale(*, store, seller, customer=None, channel, payment_method=None):
 ### Add item to sale ###
 @transaction.atomic
 def add_sale_item(*, sale, variant, quantity, discount=0):
+    sale = Sale.objects.select_for_update().get(pk=sale.pk)
+
     if sale.status != Sale.StatusChoices.DRAFT:
         raise ValidationError(
-           " امکان اصلاح فروش تکمیل‌شده وجود ندارد."
+           "It is not possible to modify a completed sale."
         )
-    
+
+    if variant.product.store_id != sale.store_id:
+        raise ValidationError(
+            'The selected variant does not belong to the store of this sale.'
+        )
 
     if quantity <= 0:
         raise ValidationError(
-            "مقدار باید بزرگتر از صفر باشد."
+            'The value must be greater than zero.'
         )
     
     # Get the current selling price
