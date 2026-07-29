@@ -159,7 +159,7 @@ Replace in these files:
 Set the customer relation queryset from the request's current store; also
 validate ownership inside `create_sale()`.
 
-### Task 9: Scope Sale Variant Input to Store
+### Task 9: Scope Sale Variant Input to Store 🟡
 **File**: `sales/api/serializers.py`
 
 Set the variant relation queryset from the request's current store; also
