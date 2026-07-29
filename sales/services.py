@@ -10,7 +10,8 @@ from catalog.models import ProductVariant
 ### Create empty sale (Draft) ###
 @transaction.atomic
 def create_sale(*, store, seller, customer=None, channel, payment_method=None):
-
+    if customer is not None and customer.store_id != store.id:
+        raise ValidationError('The selected customer does not belong to this store')
 
     sale = Sale.objects.create(
         store=store,
