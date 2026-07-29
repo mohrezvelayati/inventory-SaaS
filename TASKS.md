@@ -153,7 +153,7 @@ Replace in these files:
 - [x] Add a database uniqueness constraint on `StoreMembership.user`.
 - [ ] Test the rule at both API and database levels.
 
-### Task 8: Scope Sale Customer Input to Store
+### Task 8: Scope Sale Customer Input to Store 🟡
 **File**: `sales/api/serializers.py`
 
 Set the customer relation queryset from the request's current store; also
