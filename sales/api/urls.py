@@ -6,6 +6,7 @@ from sales.api.views import (
     SaleCompleteView,
     SaleListView,
     SaleDetailView,
+    SaleCancelView,
 )
 
 
@@ -16,5 +17,6 @@ urlpatterns = [
     path("<int:sale_id>/", SaleDetailView.as_view()),
     path("<int:sale_id>/items/",SaleItemCreateView.as_view()),
     path("<int:sale_id>/complete/",SaleCompleteView.as_view()),
+    path("<int:sale_id>/cancel/",SaleCancelView.as_view()),
 
 ]

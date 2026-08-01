@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404
 
 
 from sales.api.serializers import SaleCreateSerializer, SaleSerializer, SaleItemCreateSerializer
-from sales.services import create_sale, add_sale_item, complete_sale
+from sales.services import cancel_sale, create_sale, add_sale_item, complete_sale
 from sales.models import Sale
 from stores.services import get_current_membership, MembershipResolutionError
 
@@ -131,3 +131,27 @@ class SaleListView(generics.ListAPIView):
         return Sale.objects.filter(
             store=membership.store
         ).prefetch_related('items')
+
+
+
+class SaleCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, sale_id):
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError:
+            raise Http404("Sale not found.")
+
+        sale = get_object_or_404(
+            Sale.objects.select_related("store"),
+            id=sale_id,
+            store=membership.store,
+        )
+
+        cancel_sale(sale=sale)
+
+        return Response(
+            {"message": "Sale canceled successfully"},
+            status=status.HTTP_200_OK
+        )
