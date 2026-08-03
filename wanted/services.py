@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError
+
 from wanted.models import WantedProduct, WantedCustomerRequest
 
 
@@ -12,6 +14,11 @@ def create_wanted(
         customer=None,
         user=None
 ):
+
+    if product is not None and product.store_id != store.id:
+        raise ValidationError('Product does not belong to the store')
+    if customer is not None and customer.store_id != store.id:
+        raise ValidationError('Customer does not belong to the store')
     
     wanted_product , created = WantedProduct.objects.get_or_create(
         store=store,
