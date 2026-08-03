@@ -11,13 +11,14 @@ from sales.api.serializers import SaleCreateSerializer, SaleSerializer, SaleItem
 from sales.services import cancel_sale, create_sale, add_sale_item, complete_sale
 from sales.models import Sale
 from stores.services import get_current_membership, MembershipResolutionError
+from sales.permissions import CanCreateSale
 
 
 
 class SaleCreateView(CreateAPIView):
 
     serializer_class = SaleCreateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCreateSale]
 
 
     def perform_create(self, serializer):
@@ -43,7 +44,7 @@ class SaleItemCreateView(generics.CreateAPIView):
 
     serializer_class = SaleItemCreateSerializer
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCreateSale]
 
 
     def perform_create(self, serializer):
@@ -74,7 +75,7 @@ class SaleItemCreateView(generics.CreateAPIView):
 
 class SaleCompleteView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCreateSale]
 
 
     def post(self, request, sale_id):
@@ -100,7 +101,7 @@ class SaleCompleteView(APIView):
 
 class SaleDetailView(generics.RetrieveAPIView):
     serializer_class = SaleSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCreateSale]
     lookup_url_kwarg = 'sale_id'
 
     def get_queryset(self):
@@ -119,7 +120,7 @@ class SaleDetailView(generics.RetrieveAPIView):
 
 class SaleListView(generics.ListAPIView):
     serializer_class = SaleSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCreateSale]
 
     def get_queryset(self):
         try:
@@ -134,7 +135,7 @@ class SaleListView(generics.ListAPIView):
 
 
 class SaleCancelView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCreateSale]
 
     def post(self, request, sale_id):
         try:

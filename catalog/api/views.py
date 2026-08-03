@@ -3,17 +3,16 @@ from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 
-from catalog.permissions import CanCreateVariant
+from catalog.permissions import CanManageCatalog
 from catalog.models import Category, Product
 from catalog.api.serializers import CategorySerializer, ProductSerializer, ProductVariantSerializer
 from catalog.services import create_category, create_product, create_variant
-from stores.permissions import CanCreateProduct
 from stores.services import get_current_membership, MembershipResolutionError
 
 
 
 class CategoryListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageCatalog]
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
@@ -44,7 +43,7 @@ class CategoryListCreateView(generics.ListCreateAPIView):
 
 class ProductListCreateView(generics.ListCreateAPIView):
     serializer_class = ProductSerializer
-    permission_classes = [IsAuthenticated, CanCreateProduct]  # Custom permission to check if the user can create products
+    permission_classes = [IsAuthenticated, CanManageCatalog]
 
     def get_queryset(self):
         try:
@@ -79,10 +78,7 @@ class ProductVariantCreateView(generics.CreateAPIView):
     
     serializer_class = ProductVariantSerializer
 
-    permission_classes = [
-        IsAuthenticated,
-        CanCreateVariant
-    ]
+    permission_classes = [IsAuthenticated, CanManageCatalog]
 
 
     def perform_create(self, serializer):

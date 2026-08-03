@@ -4,6 +4,7 @@ from django.http import Http404
 
 from wanted.api.serializers import WantedSerializer
 from wanted.models import WantedProduct
+from wanted.permissions import CanManageWanted
 from wanted.services import create_wanted
 from stores.services import get_current_membership, MembershipResolutionError
 
@@ -11,7 +12,7 @@ from stores.services import get_current_membership, MembershipResolutionError
 
 class WantedListCreateView(generics.ListCreateAPIView):
     serializer_class = WantedSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageWanted]
 
 
     def get_queryset(self):

@@ -5,7 +5,7 @@ from django.http import Http404
 from catalog.models import ProductVariant
 from inventory.services import create_inventory_movement
 from inventory.api.serializers import InventoryMovementSerializer, InventorySerializer
-from inventory.permissions import CanViewInventory
+from inventory.permissions import CanManageInventory, CanViewInventory
 from stores.services import get_current_membership, MembershipResolutionError
 
 
@@ -14,7 +14,7 @@ class InventoryMovementCreateView(generics.CreateAPIView):
 
     serializer_class = InventoryMovementSerializer
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageInventory]
 
     def perform_create(self, serializer):
         try:

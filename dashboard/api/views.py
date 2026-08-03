@@ -6,6 +6,7 @@ from django.http import Http404
 from django.utils import timezone
 
 
+from dashboard.permissions import CanViewDashboard
 from dashboard.services.sales import get_sales_overview
 from dashboard.services.inventory import get_inventory_overview, get_low_stock_products
 from dashboard.services.products import get_top_products
@@ -16,9 +17,7 @@ from stores.services import get_current_membership, MembershipResolutionError
 
 class DashboardView(APIView):
 
-    permission_classes=[
-        IsAuthenticated
-    ]
+    permission_classes=[IsAuthenticated, CanViewDashboard]
 
 
     def get(self, request):

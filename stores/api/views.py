@@ -2,7 +2,7 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
 
-from stores.permissions import CanCreateProduct
+from stores.permissions import CanManageMembers
 from stores.models import StoreMembership
 from stores.api.serializers import StoreSerializer, MembershipSerializer
 from stores.services import create_store_with_membership, get_current_membership, MembershipResolutionError
@@ -29,7 +29,7 @@ class StoreMembershipCreateView(generics.CreateAPIView):
     This view is for creating a new membership for the currently authenticated user's store
     """
     serializer_class = MembershipSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageMembers]
 
     def perform_create(self, serializer):
         try:
@@ -45,7 +45,7 @@ class MembershipListView(generics.ListAPIView):
     This view is for listing all memberships of the currently authenticated user's store
     """
     serializer_class = MembershipSerializer
-    permission_classes = [IsAuthenticated, CanCreateProduct]
+    permission_classes = [IsAuthenticated, CanManageMembers]
 
     def get_queryset(self):
         try:
