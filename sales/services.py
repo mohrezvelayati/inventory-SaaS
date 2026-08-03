@@ -184,6 +184,7 @@ def complete_sale(*, sale, user):
 ### Cancel Sale ###
 @transaction.atomic
 def cancel_sale(*, sale):
+    sale = Sale.objects.select_for_update().get(pk=sale.pk) # Fetch and lock the sale to prevent concurrent cancellation
     if sale.status != Sale.StatusChoices.DRAFT:
         raise ValidationError(
             "فقط فروش درحال تکمیل می‌تواند کنسل شود"

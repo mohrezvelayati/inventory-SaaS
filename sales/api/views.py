@@ -101,20 +101,19 @@ class SaleCompleteView(APIView):
 class SaleDetailView(generics.RetrieveAPIView):
     serializer_class = SaleSerializer
     permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = 'sale_id'
 
-    def get_queryset(self, request, sale_id):
+    def get_queryset(self):
         try:
-            membership = get_current_membership(request.user)
+            membership = get_current_membership(self.request.user)
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        sale = get_object_or_404(
-            Sale.objects.select_related("store"),
-            id=sale_id,
-            store=membership.store,
+        return (
+            Sale.objects
+            .filter(store=membership.store)
+            .prefetch_related('items__variant__product')
         )
-
-        return sale
 
 
 
