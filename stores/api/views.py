@@ -5,7 +5,13 @@ from django.http import Http404
 from stores.permissions import CanManageMembers
 from stores.models import StoreMembership
 from stores.api.serializers import StoreSerializer, MembershipSerializer
-from stores.services import create_store_with_membership, get_current_membership, MembershipResolutionError
+from stores.services import (
+    MembershipResolutionError,
+    create_store_membership,
+    create_store_with_membership,
+    get_current_membership,
+)
+
 
 
 
@@ -23,34 +29,26 @@ class StoreCreateView(generics.CreateAPIView):
         serializer.instance = store
 
 
-
-class StoreMembershipCreateView(generics.CreateAPIView):
-    """
-    This view is for creating a new membership for the currently authenticated user's store
-    """
-    serializer_class = MembershipSerializer
-    permission_classes = [IsAuthenticated, CanManageMembers]
-
-    def perform_create(self, serializer):
-        try:
-            membership = get_current_membership(self.request.user)
-        except MembershipResolutionError as error:
-            raise Http404('Store Not Found') from error
-
-        serializer.save(store=membership.store)
-
-
-class MembershipListView(generics.ListAPIView):
-    """
-    This view is for listing all memberships of the currently authenticated user's store
-    """
+class MembershipListCreateView(generics.ListCreateAPIView):
     serializer_class = MembershipSerializer
     permission_classes = [IsAuthenticated, CanManageMembers]
 
     def get_queryset(self):
         try:
             membership = get_current_membership(self.request.user)
-        except MembershipResolutionError as error:
-            raise Http404('Store Not Found') from error
+        except MembershipResolutionError:
+            raise Http404('You do not belong to any store')
 
         return StoreMembership.objects.filter(store=membership.store)
+
+    def perform_create(self, serializer):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError:
+            raise Http404('You do not belong to any store')
+
+        create_store_membership(
+            store=membership.store,
+            user=serializer.validated_data['user'],
+            role=serializer.validated_data['role']
+        )

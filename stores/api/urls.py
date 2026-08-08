@@ -1,9 +1,8 @@
 from django.urls import path
-from stores.api.views import StoreCreateView, StoreMembershipCreateView, MembershipListView
+from stores.api.views import StoreCreateView, MembershipListCreateView
 
 
 urlpatterns = [
     path('', StoreCreateView.as_view(), name='store-create'),
-    path('members', MembershipListView.as_view(), name='membership-list'),
-    path('members/create', StoreMembershipCreateView.as_view(), name='store-membership-create')
+    path('members/', MembershipListCreateView.as_view(), name='membership-list-create')
 ]
