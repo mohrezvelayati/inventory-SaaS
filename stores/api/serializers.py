@@ -28,7 +28,7 @@ class MembershipSerializer(serializers.ModelSerializer):
         model = StoreMembership
         fields = ['id', 'store', 'user', 'role', 'created_at', 'updated_at']
 
-    read_only_fields = ['store', 'created_at', 'updated_at']
+        read_only_fields = ['store', 'created_at', 'updated_at']
 
     def validate_user(self, user):
         if user.memberships.exists():
@@ -37,3 +37,9 @@ class MembershipSerializer(serializers.ModelSerializer):
             )
 
         return user
+
+
+class MembershipRoleUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StoreMembership
+        fields = ['role']

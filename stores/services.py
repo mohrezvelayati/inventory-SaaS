@@ -1,4 +1,6 @@
 from django.db import transaction
+from rest_framework.exceptions import ValidationError
+
 
 from stores.models import Store, StoreMembership
 
@@ -46,3 +48,61 @@ def create_store_membership(*, store, user, role):
 
 def get_user_stores(user):
     return get_current_membership(user).store
+
+
+@transaction.atomic
+def update_store_membership_role(*, actor_membership, membership, role):
+    if membership.store_id != actor_membership.store_id:
+        raise ValidationError({'membership': 'Membership not found'})
+
+    if role not in StoreMembership.RoleChoices.values:
+        raise ValidationError({'role': 'Invalid role'})
+
+    Store.objects.select_for_update().get(id=actor_membership.store_id)
+
+    locked_membership = StoreMembership.objects.select_for_update().get(pk=membership.pk)
+
+    if locked_membership.user_id == actor_membership.user_id:
+        raise ValidationError({'role': 'You cannot change your own role'})
+
+    if (
+        locked_membership.role == StoreMembership.RoleChoices.MANAGER
+        and role != StoreMembership.RoleChoices.MANAGER
+        and StoreMembership.objects.filter(
+            store_id=actor_membership.store_id,
+            role=StoreMembership.RoleChoices.MANAGER
+        ).count() == 1
+    ):
+        raise ValidationError({'role': 'Cannot remove the last manager from the store'})
+
+    locked_membership.role = role
+    locked_membership.save(
+        update_fields=['role', 'updated_at']
+    )
+    return locked_membership
+
+
+
+@transaction.atomic
+def delete_store_membership(*, actor_membership, membership):
+    if membership.store_id != actor_membership.store_id:
+        raise ValidationError({'membership': 'Membership not found'})
+
+    Store.objects.select_for_update().get(id=actor_membership.store_id)
+
+    locked_membership = StoreMembership.objects.select_for_update().get(pk=membership.pk)
+
+    if locked_membership.user_id == actor_membership.user_id:
+        raise ValidationError({'membership': 'You cannot remove yourself from the store'})
+
+    if (
+        locked_membership.role == StoreMembership.RoleChoices.MANAGER
+        and StoreMembership.objects.filter(
+            store_id=actor_membership.store_id,
+            role=StoreMembership.RoleChoices.MANAGER
+        ).count() == 1
+    ):
+        raise ValidationError({'membership': 'Cannot remove the last manager from the store'})
+
+
+    locked_membership.delete()
