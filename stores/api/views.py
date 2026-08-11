@@ -10,10 +10,9 @@ from stores.api.serializers import (
     MembershipSerializer,
     MembershipRoleUpdateSerializer,
     MembershipPermissionSerializer,
-    PermissionSerilizer,
+    PermissionSerializer,
     )
 from stores.services import (
-    MembershipResolutionError,
     MembershipResolutionError,
     assign_membership_permission,
     create_store_membership,
@@ -60,9 +59,9 @@ class MembershipListCreateView(generics.ListCreateAPIView):
             raise Http404('You do not belong to any store')
 
         new_membership = create_store_membership(
-        store=membership.store,
-        user=serializer.validated_data["user"],
-        role=serializer.validated_data["role"],
+            store=membership.store,
+            user=serializer.validated_data["user"],
+            role=serializer.validated_data["role"],
         )
 
         serializer.instance = new_membership
@@ -112,7 +111,7 @@ class MembershipDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class PermissionListView(generics.ListAPIView):
-    serializer_class = PermissionSerilizer
+    serializer_class = PermissionSerializer
     permission_classes = [IsAuthenticated, CanManageMembers]
 
     def get_queryset(self):

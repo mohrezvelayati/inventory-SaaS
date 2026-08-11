@@ -46,7 +46,7 @@ class MembershipRoleUpdateSerializer(serializers.ModelSerializer):
         fields = ['role']
 
 
-class PermissionSerilizer(serializers.ModelSerializer):
+class PermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Permission
         fields = ['id', 'code', 'name']
@@ -56,6 +56,10 @@ class PermissionSerilizer(serializers.ModelSerializer):
 class MembershipPermissionSerializer(serializers.ModelSerializer):
     permission_code = serializers.CharField(
         source='permission.code',
+        read_only=True,
+    )
+    permission_name = serializers.CharField(
+        source="permission.name",
         read_only=True,
     )
     class Meta:
