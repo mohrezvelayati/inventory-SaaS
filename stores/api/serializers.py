@@ -1,7 +1,8 @@
 from rest_framework import serializers
 
 from users.models import User
-from stores.models import Store, StoreMembership
+from stores.models import Store, StoreMembership, Permission, MembershipPermission
+
 
 
 class StoreSerializer(serializers.ModelSerializer):
@@ -43,3 +44,32 @@ class MembershipRoleUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoreMembership
         fields = ['role']
+
+
+class PermissionSerilizer(serializers.ModelSerializer):
+    class Meta:
+        model = Permission
+        fields = ['id', 'code', 'name']
+        read_only_fields = ['id', 'code', 'name']
+
+
+class MembershipPermissionSerializer(serializers.ModelSerializer):
+    permission_code = serializers.CharField(
+        source='permission.code',
+        read_only=True,
+    )
+    class Meta:
+        model = MembershipPermission
+        fields = [
+            'id',
+            'permission',
+            'permission_code',
+            'permission_name',
+            'created_at',
+        ]
+        read_only_fields = [
+            'id',
+            'permission_code',
+            'permission_name',
+            'created_at',
+        ]

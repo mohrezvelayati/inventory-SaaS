@@ -2,7 +2,7 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
 
-from stores.models import Store, StoreMembership
+from stores.models import Store, StoreMembership, MembershipPermission
 
 
 class MembershipResolutionError(Exception):
@@ -106,3 +106,45 @@ def delete_store_membership(*, actor_membership, membership):
 
 
     locked_membership.delete()
+
+
+
+def assign_membership_permission(*, actor_membership, membership, permission):
+    if membership.store_id != actor_membership.store_id:
+        raise ValidationError(
+            {'membership' : 'Membership Not Found.'}
+        )
+
+    if membership.user_id == actor_membership.user_id:
+        raise ValidationError(
+            {'membership' : 'You cannot change your own permissions.'}
+        )
+
+    membership_permission, created = (
+        MembershipPermission.objects.get_or_create(
+            membership=membership,
+            permission=permission,
+        )
+    )
+
+    if not created:
+        raise ValidationError(
+            {'permission' : 'This permission is already assigned'}
+        )
+    return membership_permission
+
+
+
+def revoke_membership_permission(*, actor_membership, membership_permission):
+    target_membership = membership_permission.membership
+
+    if target_membership.store_id != actor_membership.store_id:
+        raise ValidationError(
+            {'membership' : 'Membership not found'}
+        )
+
+    if target_membership.user_id == actor_membership.user_id:
+        raise ValidationError(
+            {'membership' : 'You cannot change your own permissions.'}
+        )
+    membership_permission.delete()

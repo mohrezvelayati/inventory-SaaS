@@ -1,18 +1,28 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 
 from stores.permissions import CanManageMembers
-from stores.models import StoreMembership
-from stores.api.serializers import StoreSerializer, MembershipSerializer, MembershipRoleUpdateSerializer
+from stores.models import StoreMembership, Permission, MembershipPermission
+from stores.api.serializers import (
+    StoreSerializer,
+    MembershipSerializer,
+    MembershipRoleUpdateSerializer,
+    MembershipPermissionSerializer,
+    PermissionSerilizer,
+    )
 from stores.services import (
     MembershipResolutionError,
+    MembershipResolutionError,
+    assign_membership_permission,
     create_store_membership,
     create_store_with_membership,
-    get_current_membership,
-    update_store_membership_role,
     delete_store_membership,
-)
+    get_current_membership,
+    revoke_membership_permission,
+    update_store_membership_role,
+    )
 
 
 
@@ -96,6 +106,79 @@ class MembershipDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         delete_store_membership(
-            actor_membership=self.get_actore_membership(),
+            actor_membership=self.get_actor_membership(),
             membership=instance,
+    )
+
+
+class PermissionListView(generics.ListAPIView):
+    serializer_class = PermissionSerilizer
+    permission_classes = [IsAuthenticated, CanManageMembers]
+
+    def get_queryset(self):
+        return Permission.objects.order_by('code')
+
+
+class MembershipPermissionListCreateView(generics.ListCreateAPIView):
+    serializer_class = MembershipPermissionSerializer
+    permission_classes = [IsAuthenticated, CanManageMembers]
+
+    def get_actor_membership(self):
+        try:
+            return get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found') from error
+
+    def get_target_membership(self):
+        actor_membership = self.get_actor_membership()
+
+        return get_object_or_404(
+            StoreMembership,
+            pk=self.kwargs['membership_id'],
+            store_id=actor_membership.store_id,
+        )
+
+    def get_queryset(self):
+        return (
+            MembershipPermission.objects.filter(
+            membership=self.get_target_membership()
+        )
+        .select_related('permission')
+        .order_by('id')
+        )
+
+    def perform_create(self, serializer):
+        membership_permission = assign_membership_permission(
+            actor_membership=self.get_actor_membership(),
+            membership=self.get_target_membership(),
+            permission=serializer.validated_data['permission'],
+        )
+        serializer.instance = membership_permission
+
+
+class MembershipPermissionDetailView(generics.DestroyAPIView):
+    serializer_class = MembershipPermissionSerializer
+    permission_classes = [IsAuthenticated, CanManageMembers]
+    lookup_url_kwarg = 'membership_permission_id'
+
+    def get_actor_membership(self):
+        try:
+            return get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+    def get_queryset(self):
+        actor_membership = self.get_actor_membership()
+        return (
+            MembershipPermission.objects
+            .filter(
+                membership_id = self.kwargs['membership_id'],
+                membership__store_id = actor_membership.store_id,
+            )
+            .select_related('membership')
+        )
+    def perform_destroy(self, instance):
+        revoke_membership_permission(
+            actor_membership=self.get_actor_membership(),
+            membership_permission=instance,
         )
