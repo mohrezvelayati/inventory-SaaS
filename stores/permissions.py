@@ -28,4 +28,10 @@ class HasPermission(BasePermission):
 
 
 class CanManageMembers(HasPermission):
-    required_permission = 'manage_members'
+    def has_permission(self, request, view):
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError:
+            return False
+
+        return membership.role == StoreMembership.RoleChoices.MANAGER
