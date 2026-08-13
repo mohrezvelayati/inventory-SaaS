@@ -28,3 +28,20 @@ class CustomerListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
         serializer.save(store=membership.store)
+
+
+
+class CustomerDetailView(generics.RetrieveUpdateDestroyAPIView):
+
+    serializer_class = CustomerSerializer
+    permission_classes = [IsAuthenticated, CanManageCustomers]
+    lookup_url_kwarg = 'customer_id'
+
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        return Customer.objects.filter(store_id=membership.store_id)
