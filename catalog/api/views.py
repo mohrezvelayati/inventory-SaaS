@@ -10,7 +10,7 @@ from django.conf import settings
 from catalog.permissions import CanManageCatalog
 from catalog.models import Category, Product
 from catalog.api.serializers import CategorySerializer, ProductSerializer, ProductVariantSerializer
-from catalog.services import create_category, create_product, create_variant
+from catalog.services import create_category, create_product, create_variant, update_product, update_variant
 from stores.services import get_current_membership, MembershipResolutionError
 
 
@@ -128,6 +128,32 @@ class ProductListCreateView(generics.ListCreateAPIView):
         serializer.instance = product  # Set the instance to the newly created product
 
 
+class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ProductSerializer
+    permission_classes = [IsAuthenticated, CanManageCatalog]
+    lookup_url_kwarg = 'product_id'
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found.') from error
+        return Product.objects.filter(store_id=membership.store_id).prefetch_related('variants', 'category')
+
+    def perform_update(self, serializer):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found.') from error
+        product = self.get_object()
+        categories = serializer.validated_data.get('category', [])
+        update_product(
+            product=product,
+            name=serializer.validated_data['name'],
+            description=serializer.validated_data.get('description', ''),
+            categories=categories,
+        )
+        serializer.instance = product
 
 
 class ProductVariantCreateView(generics.CreateAPIView):
@@ -156,6 +182,37 @@ class ProductVariantCreateView(generics.CreateAPIView):
         )
 
         serializer.instance = variant
+
+
+class ProductVariantDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ProductVariantSerializer
+    permission_classes = [IsAuthenticated, CanManageCatalog]
+    lookup_url_kwarg = 'variant_id'
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found.') from error
+        return ProductVariant.objects.filter(
+            product__store_id=membership.store_id
+        ).select_related('product')
+
+    def perform_update(self, serializer):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found.') from error
+        variant = self.get_object()
+        update_variant(
+            variant=variant,
+            size=serializer.validated_data['size'],
+            purchase_price=serializer.validated_data['purchase_price'],
+            sale_price=serializer.validated_data['sale_price'],
+        )
+        serializer.instance = variant
+
+
 
 
 class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):

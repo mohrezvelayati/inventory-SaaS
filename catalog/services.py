@@ -42,3 +42,21 @@ def create_variant(*, product, size, purchase_price, sale_price):
         purchase_price=purchase_price,
         sale_price=sale_price
     )
+
+
+def update_product(*, product, name, description, categories):
+    product.name = name
+    product.description = description
+    product.save(update_fields=['name', 'description', 'updated_at'])
+    if categories is not None:
+        product.category.set(categories)
+    return product
+
+
+def update_variant(*, variant, size, purchase_price, sale_price):
+    variant.size = size
+    variant.purchase_price = purchase_price
+    variant.sale_price = sale_price
+    variant.save(update_fields=['size', 'purchase_price', 'sale_price', 'updated_at'])
+    return variant
+
