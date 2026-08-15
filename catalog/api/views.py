@@ -100,3 +100,17 @@ class ProductVariantCreateView(generics.CreateAPIView):
         )
 
         serializer.instance = variant
+
+
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = CategorySerializer
+    permission_classes = [IsAuthenticated, CanManageCatalog]
+    lookup_url_kwarg = "category_id"
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404("Store not found.") from error
+
+        return Category.objects.filter(store_id=membership.store_id)
