@@ -10,6 +10,20 @@ from stores.services import get_current_membership, MembershipResolutionError
 
 
 
+class WantedProductDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = WantedSerializer
+    permission_classes = [IsAuthenticated, CanManageWanted]
+    lookup_url_kwarg = 'wanted_id'
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+        return WantedProduct.objects.filter(store=membership.store)
+
+
+
 class WantedListCreateView(generics.ListCreateAPIView):
     serializer_class = WantedSerializer
     permission_classes = [IsAuthenticated, CanManageWanted]
