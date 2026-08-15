@@ -192,7 +192,7 @@ def cancel_sale(*, sale):
             store=sale.store,
             variant=item.variant,
             quantity=item.quantity,
-            movement_type='cancellation',
+            movement_type='adjustment',
             note=f"Cancellation of Sale #{sale.id}"
         )
     sale.status = Sale.StatusChoices.CANCELLED
