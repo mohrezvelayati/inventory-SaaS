@@ -47,6 +47,7 @@ class WantedListCreateView(generics.ListCreateAPIView):
             store = membership.store,
             product = serializer.validated_data.get('product'),
             product_name=serializer.validated_data['product_name'],
+            brand=serializer.validated_data.get('brand', ''),
             size = serializer.validated_data['size'],
             customer = serializer.validated_data.get('customer'),
             user = self.request.user

@@ -1,9 +1,11 @@
+from django.db import transaction
+from django.db.models import F
 from django.core.exceptions import ValidationError
 
 from wanted.models import WantedProduct, WantedCustomerRequest
 
 
-
+@transaction.atomic
 def create_wanted(
         *,
         store,
@@ -20,24 +22,26 @@ def create_wanted(
     if customer is not None and customer.store_id != store.id:
         raise ValidationError('Customer does not belong to the store')
     
-    wanted_product , created = WantedProduct.objects.get_or_create(
+    wanted_product, created = WantedProduct.objects.get_or_create(
         store=store,
-        product=product,
         product_name=product_name,
         size=size,
-        defaults={'wanted_count':0}
+        defaults={
+            'product': product,
+            'brand': brand,
+            'wanted_count': 0,
+        },
     )
 
-    wanted_product.wanted_count += 1
-
-    wanted_product.save(
-        update_fields=['wanted_count']
+    WantedProduct.objects.filter(pk=wanted_product.pk).update(
+        wanted_count=F('wanted_count') + 1
     )
-
+    wanted_product.refresh_from_db(fields=['wanted_count'])
 
     WantedCustomerRequest.objects.create(
         wanted_product=wanted_product,
-        customer=customer
+        customer=customer,
+        created_by=user,
     )
 
     return wanted_product
