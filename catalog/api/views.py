@@ -2,11 +2,16 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
 from django.shortcuts import get_object_or_404
+from django.db.models import BigIntegerField, Sum, Value
+from django.db.models.functions import Coalesce
+from rest_framework.exceptions import ValidationError
 
 from catalog.permissions import CanManageCatalog
 from catalog.models import Category, Product
 from catalog.api.serializers import CategorySerializer, ProductSerializer, ProductVariantSerializer
 from catalog.services import create_category, create_product, create_variant
+from config.settings import LOW_STOCK_THRESHOLD
+from dashboard.services import products
 from stores.services import get_current_membership, MembershipResolutionError
 
 
@@ -49,9 +54,61 @@ class ProductListCreateView(generics.ListCreateAPIView):
         try:
             membership = get_current_membership(self.request.user)
         except MembershipResolutionError as error:
-            raise Http404('Store Not Found') from error
+            raise Http404("Store not found.") from error
 
-        return Product.objects.filter(store=membership.store)
+        products = Product.objects.filter(store_id=membership.store_id)
+
+        search = self.request.query_params.get("search")
+        if search:
+            products = products.filter(name__icontains=search)
+
+        category_id = self.request.query_params.get('category_id')
+        if category_id:
+            try:
+                category_id = int(category_id)
+            except ValueError:
+                raise ValidationError({"category_id": "Category ID must be an integer."})
+
+            products = products.filter(category__id=category_id)
+
+        stock_status = self.request.query_params.get('stock_status')
+        if stock_status:
+            allowed_statuses = {
+                "in_stock",
+                "low_stock",
+                "out_of_stock",
+            }
+
+            if stock_status not in allowed_statuses:
+                raise ValidationError({"stock_status": "Invalid stock status."})
+
+        products = products.annotate(
+                total_stock=Coalesce(
+                    Sum("variants__current_stock"),
+                    Value(0),
+                    output_field=BigIntegerField(),
+                )
+            )
+
+        if stock_status == "out_of_stock":
+            products = products.filter(
+                total_stock=0
+        )
+        elif stock_status == "low_stock":
+            products = products.filter(
+                total_stock__gt=0,
+                total_stock__lte=LOW_STOCK_THRESHOLD,
+            )
+        else:
+            products = products.filter(
+                total_stock__gt=LOW_STOCK_THRESHOLD
+            )
+
+        return (
+            products
+            .prefetch_related("variants", "category")
+            .order_by("id")
+        )
 
     
     def perform_create(self, serializer):
@@ -60,7 +117,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        categories = serializer.validated_data.get('categories', [])
+        categories = serializer.validated_data.get('category', [])
 
         product = create_product(
             store=membership.store,

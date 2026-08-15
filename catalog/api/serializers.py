@@ -11,7 +11,7 @@ class CategorySerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_name(self, name):
-        request = self.context.get("request")
+        request = self.context.get('request')
 
         if request is None or not request.user.is_authenticated:
             return name
@@ -40,11 +40,46 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    categories = serializers.PrimaryKeyRelatedField(
+        source='category',
+        queryset=Category.objects.none(),
+        many=True,
+        required=False,
+    )
+
     class Meta:
         model = Product
-        fields = ['id', 'name', 'description', 'variants', 'created_at']
-        read_only_fields = ['id', 'variants', 'created_at']
+        fields = [
+            'id',
+            'name',
+            'description',
+            'categories',
+            'variants',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'variants',
+            'created_at',
+            'updated_at',
+        ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return
+
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError:
+            return
+
+        self.fields['categories'].queryset = (
+            Category.objects.filter(store_id=membership.store_id)
+        )
 
 
 
