@@ -184,16 +184,17 @@ def complete_sale(*, sale, user):
 ### Cancel Sale ###
 @transaction.atomic
 def cancel_sale(*, sale):
-    sale = Sale.objects.select_for_update().get(pk=sale.pk) # Fetch and lock the sale to prevent concurrent cancellation
-    if sale.status != Sale.StatusChoices.DRAFT:
-        raise ValidationError(
-            "فقط فروش درحال تکمیل می‌تواند کنسل شود"
+    sale = Sale.objects.select_for_update().get(pk=sale.pk)
+    if sale.status != Sale.StatusChoices.COMPLETED:
+        raise ValidationError("فقط فروش تکمیل شده قابل کنسل شدن است")
+    for item in sale.items.all():
+        create_inventory_movement(
+            store=sale.store,
+            variant=item.variant,
+            quantity=item.quantity,
+            movement_type='cancellation',
+            note=f"Cancellation of Sale #{sale.id}"
         )
     sale.status = Sale.StatusChoices.CANCELLED
-
-
-    sale.save(
-        update_fields = ['status']
-    )
-
+    sale.save(update_fields=['status'])
     return sale

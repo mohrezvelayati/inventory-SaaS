@@ -5,6 +5,34 @@ from rest_framework.exceptions import ValidationError
 from stores.models import Store, StoreMembership, MembershipPermission
 
 
+ROLE_PERMISSIONS = {
+    StoreMembership.RoleChoices.MANAGER: [
+        'manage_catalog', 'view_inventory', 'manage_inventory',
+        'create_sale', 'view_sales', 'manage_customers',
+        'manage_wanted', 'view_dashboard', 'manage_members',
+    ],
+    StoreMembership.RoleChoices.SELLER: [
+        'create_sale', 'view_sales', 'view_inventory', 'view_dashboard',
+    ],
+    StoreMembership.RoleChoices.ADMIN: [
+        'create_sale', 'view_sales', 'view_inventory', 'view_dashboard',
+        'manage_wanted',
+    ],
+}
+
+def assign_default_permissions(*, membership):
+    role_permissions = ROLE_PERMISSIONS.get(membership.role, [])
+    Permission = MembershipPermission._meta.get_model('stores', 'Permission')
+    for code in role_permissions:
+        Permission.objects.get_or_create(code=code)
+        permission = Permission.objects.get(code=code)
+        MembershipPermission.objects.get_or_create(
+            membership=membership, permission=permission
+        )
+
+
+
+
 class MembershipResolutionError(Exception):
     """Base error for resolving a user's single store membership."""
 
@@ -34,7 +62,8 @@ def create_store_with_membership(*, user, name):
 
     store = Store.objects.create(name=name)
 
-    StoreMembership.objects.create(store=store, user=user, role=StoreMembership.RoleChoices.MANAGER)
+    membership = StoreMembership.objects.create(store=store, user=user, role=StoreMembership.RoleChoices.MANAGER)
+    assign_default_permissions(membership=membership)
 
     return store
 
