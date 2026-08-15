@@ -183,7 +183,7 @@ def complete_sale(*, sale, user):
 
 ### Cancel Sale ###
 @transaction.atomic
-def cancel_sale(*, sale):
+def cancel_sale(*, sale, user):
     sale = Sale.objects.select_for_update().get(pk=sale.pk)
     if sale.status != Sale.StatusChoices.COMPLETED:
         raise ValidationError("فقط فروش تکمیل شده قابل کنسل شدن است")
@@ -193,6 +193,7 @@ def cancel_sale(*, sale):
             variant=item.variant,
             quantity=item.quantity,
             movement_type='adjustment',
+            user=user,
             note=f"Cancellation of Sale #{sale.id}"
         )
     sale.status = Sale.StatusChoices.CANCELLED

@@ -201,7 +201,7 @@ class SaleCancelView(APIView):
             store=membership.store,
         )
 
-        cancel_sale(sale=sale)
+        cancel_sale(sale=sale, user=request.user)
 
         return Response(
             {"message": "Sale canceled successfully"},
