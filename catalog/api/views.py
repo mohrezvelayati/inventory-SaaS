@@ -70,7 +70,9 @@ class ProductListCreateView(generics.ListCreateAPIView):
 
             products = products.filter(category__id=category_id)
 
-        stock_status = self.request.query_params.get('stock_status')
+
+        stock_status = self.request.query_params.get("stock_status")
+        
         if stock_status:
             allowed_statuses = {
                 "in_stock",
@@ -78,8 +80,10 @@ class ProductListCreateView(generics.ListCreateAPIView):
                 "out_of_stock",
             }
 
-            if stock_status not in allowed_statuses:
-                raise ValidationError({"stock_status": "Invalid stock status."})
+        if stock_status not in allowed_statuses:
+            raise ValidationError({
+                "stock_status": "Invalid stock status."
+            })
 
         products = products.annotate(
             total_stock=Coalesce(
@@ -90,14 +94,14 @@ class ProductListCreateView(generics.ListCreateAPIView):
         )
 
         if stock_status == "out_of_stock":
-            products = products.filter(
-                total_stock=0
-        )
+            products = products.filter(total_stock=0)
+
         elif stock_status == "low_stock":
             products = products.filter(
                 total_stock__gt=0,
                 total_stock__lte=settings.LOW_STOCK_THRESHOLD,
             )
+
         else:
             products = products.filter(
                 total_stock__gt=settings.LOW_STOCK_THRESHOLD
