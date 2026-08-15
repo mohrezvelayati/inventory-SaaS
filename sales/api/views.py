@@ -34,7 +34,7 @@ class SaleCreateView(CreateAPIView):
             seller=membership,
             customer=serializer.validated_data.get('customer'),
             channel=serializer.validated_data['channel'],
-            payment_method=serializer.validated_data.get('payment_method'),
+            payment_method=serializer.validated_data['payment_method'],
         )
 
         serializer.instance = sale
@@ -63,15 +63,13 @@ class SaleItemCreateView(generics.CreateAPIView):
         )
 
 
-        add_sale_item(
+        sale_item = add_sale_item(
             sale=sale,
             variant=serializer.validated_data["variant"],
             quantity=serializer.validated_data["quantity"],
-            discount=serializer.validated_data.get(
-                "discount",
-                0
-            )
+            discount=serializer.validated_data.get("discount",0)
         )
+        serializer.instance = sale_item
 
 
 

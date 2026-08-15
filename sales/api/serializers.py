@@ -53,7 +53,7 @@ class SaleCreateSerializer(serializers.Serializer):
 
     customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.none(), required=False, allow_null=True)
     channel = serializers.ChoiceField(choices=Sale.ChannelChoices.choices)
-    payment_method = serializers.ChoiceField(choices=Sale.PaymentChoices.choices, required=False, allow_null=True)
+    payment_method = serializers.ChoiceField(choices=Sale.PaymentChoices.choices)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -82,8 +82,20 @@ class SaleItemCreateSerializer(serializers.Serializer):
         max_digits=12,
         decimal_places=0,
         required=False,
-        default=0
+        default=0,
+        min_value=0,
     )
+    unit_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        read_only=True,
+    )
+    final_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        read_only=True,
+    )
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

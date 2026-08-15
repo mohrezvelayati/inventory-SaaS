@@ -1,6 +1,6 @@
 from django.db import transaction
 from django.db.models import Sum
-from django.core.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError
 
 from sales.models import Sale, SaleItem
 from inventory.services import create_inventory_movement
@@ -9,7 +9,7 @@ from catalog.models import ProductVariant
 
 ### Create empty sale (Draft) ###
 @transaction.atomic
-def create_sale(*, store, seller, customer=None, channel, payment_method=None):
+def create_sale(*, store, seller, customer=None, channel, payment_method):
     if customer is not None and customer.store_id != store.id:
         raise ValidationError('The selected customer does not belong to this store')
 
@@ -48,12 +48,22 @@ def add_sale_item(*, sale, variant, quantity, discount=0):
     
     # Get the current selling price
     unit_price = variant.sale_price
+    line_subtotal = unit_price * quantity
+
+    if discount < 0:
+        raise ValidationError({
+            "discount": "Discount cannot be negative."
+        })
+
+    if discount > line_subtotal:
+        raise ValidationError({
+            "discount": "Discount cannot exceed the line subtotal."
+        })
+
+    line_total = line_subtotal - discount
 
 
-    line_total = (unit_price * quantity) - discount
-
-
-    items = SaleItem.objects.create(
+    sale_item = SaleItem.objects.create(
         sale=sale,
         variant=variant,
         quantity=quantity,
@@ -65,7 +75,7 @@ def add_sale_item(*, sale, variant, quantity, discount=0):
 
     update_sale_total(sale)
 
-    return sale
+    return sale_item
 
 
 
