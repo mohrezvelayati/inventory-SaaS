@@ -5,13 +5,12 @@ from django.shortcuts import get_object_or_404
 from django.db.models import BigIntegerField, Sum, Value
 from django.db.models.functions import Coalesce
 from rest_framework.exceptions import ValidationError
+from django.conf import settings
 
 from catalog.permissions import CanManageCatalog
 from catalog.models import Category, Product
 from catalog.api.serializers import CategorySerializer, ProductSerializer, ProductVariantSerializer
 from catalog.services import create_category, create_product, create_variant
-from config.settings import LOW_STOCK_THRESHOLD
-from dashboard.services import products
 from stores.services import get_current_membership, MembershipResolutionError
 
 
@@ -83,12 +82,12 @@ class ProductListCreateView(generics.ListCreateAPIView):
                 raise ValidationError({"stock_status": "Invalid stock status."})
 
         products = products.annotate(
-                total_stock=Coalesce(
-                    Sum("variants__current_stock"),
-                    Value(0),
-                    output_field=BigIntegerField(),
-                )
+            total_stock=Coalesce(
+                Sum("variants__current_stock"),
+                Value(0),
+                output_field=BigIntegerField(),
             )
+        )
 
         if stock_status == "out_of_stock":
             products = products.filter(
@@ -97,11 +96,11 @@ class ProductListCreateView(generics.ListCreateAPIView):
         elif stock_status == "low_stock":
             products = products.filter(
                 total_stock__gt=0,
-                total_stock__lte=LOW_STOCK_THRESHOLD,
+                total_stock__lte=settings.LOW_STOCK_THRESHOLD,
             )
         else:
             products = products.filter(
-                total_stock__gt=LOW_STOCK_THRESHOLD
+                total_stock__gt=settings.LOW_STOCK_THRESHOLD
             )
 
         return (

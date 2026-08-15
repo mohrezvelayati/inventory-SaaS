@@ -177,3 +177,6 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API Documentation",
     "VERSION": "1.0.0",
 }
+
+# Low Stock Threshold
+LOW_STOCK_THRESHOLD = 2
