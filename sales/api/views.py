@@ -7,6 +7,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404
 from datetime import datetime
 from rest_framework.exceptions import ValidationError
+from drf_spectacular.utils import extend_schema
 
 
 from sales.api.serializers import SaleCreateSerializer, SaleSerializer, SaleItemCreateSerializer
@@ -73,6 +74,18 @@ class SaleItemCreateView(generics.CreateAPIView):
 
 
 
+@extend_schema(
+    tags=["sales"],
+    description="تکمیل یک فاکتور (تغییر وضعیت به completed)",
+    methods=["POST"],
+    request=None,
+    responses={
+        200: {
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+        }
+    },
+)
 class SaleCompleteView(APIView):
 
     permission_classes = [IsAuthenticated, CanCreateSale]
@@ -184,6 +197,18 @@ class SaleListView(generics.ListAPIView):
             }) from error
 
 
+@extend_schema(
+    tags=["sales"],
+    description="لغو یک فاکتور (تغییر وضعیت به cancelled)",
+    methods=["POST"],
+    request=None,
+    responses={
+        200: {
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+        }
+    },
+)
 class SaleCancelView(APIView):
     permission_classes = [IsAuthenticated, CanCreateSale]
 

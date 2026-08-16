@@ -2,6 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.http import Http404
+from drf_spectacular.utils import extend_schema
+
 
 from django.utils import timezone
 
@@ -14,7 +16,64 @@ from dashboard.services.wanted import get_top_wanted
 from stores.services import get_current_membership, MembershipResolutionError
 
 
-
+@extend_schema(
+    tags=["dashboard"],
+    description="داشبورد فروشگاه — نمایش خلاصه فروش، موجودی و محصولات پرفروش",
+    responses={
+        200: {
+            "type": "object",
+            "properties": {
+                "sales_overview": {
+                    "type": "object",
+                    "properties": {
+                        "orders_count": {"type": "integer"},
+                        "revenue": {"type": "integer"},
+                        "discount": {"type": "integer"},
+                    },
+                },
+                "inventory_overview": {
+                    "type": "object",
+                    "properties": {
+                        "total_variants": {"type": "integer"},
+                        "total_stock": {"type": "integer"},
+                    },
+                },
+                "low_stock_products": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "product__name": {"type": "string"},
+                            "size": {"type": "string"},
+                            "current_stock": {"type": "integer"},
+                        },
+                    },
+                },
+                "top_products": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "variant__product__name": {"type": "string"},
+                            "sold_count": {"type": "integer"},
+                        },
+                    },
+                },
+                "top_wanted": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "product_name": {"type": "string"},
+                            "size": {"type": "string"},
+                            "wanted_count": {"type": "integer"},
+                        },
+                    },
+                },
+            },
+        }
+    },
+)
 class DashboardView(APIView):
 
     permission_classes=[IsAuthenticated, CanViewDashboard]
