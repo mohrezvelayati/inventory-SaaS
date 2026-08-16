@@ -188,6 +188,22 @@ class ProductVariantCreateView(generics.CreateAPIView):
         serializer.instance = variant
 
 
+class ProductVariantListView(generics.ListAPIView):
+    serializer_class = ProductVariantSerializer
+    permission_classes = [IsAuthenticated, CanManageCatalog]
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found.') from error
+        return (
+            ProductVariant.objects
+            .filter(product__store_id=membership.store_id)
+            .select_related('product')
+        )
+
+
 class ProductVariantDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ProductVariantSerializer
     permission_classes = [IsAuthenticated, CanManageCatalog]
