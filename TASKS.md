@@ -265,7 +265,7 @@ capability-assignment APIs before claiming this task complete.
 - `?channel=store|instagram`
 - Files: `sales/api/views.py`
 
-### Task 20: Configure DRF Pagination
+### Task 20: Configure DRF Pagination ✅
 **File**: `config/settings.py`
 
 Merge these keys into the existing `REST_FRAMEWORK` dictionary; do not replace
@@ -278,39 +278,38 @@ REST_FRAMEWORK = {
 }
 ```
 
-### Task 20.1: Complete Product and Variant CRUD
-Add tenant-scoped Product detail/update/delete and Variant
-list/detail/update/delete APIs. Stock must remain read-only in variant updates;
-all stock changes go through inventory services.
+### Task 20.1: Complete Product and Variant CRUD ✅
+Added tenant-scoped Product detail/update/delete and Variant
+list/detail/update/delete APIs. Stock remains read-only in variant updates;
+all stock changes go through inventory services. Also added a new
+`ProductVariantListView` at `/api/v1/catalog/variants/`.
 
-### Task 20.2: Add Inventory Movement History
-The current API lists inventory balances and only creates movements. Add a
-tenant-scoped, paginated movement-history endpoint with product, variant, type,
-creator, and validated date filters.
+### Task 20.2: Add Inventory Movement History ✅
+Added a tenant-scoped, paginated movement-history endpoint with product, variant, type,
+creator, and validated date filters at `/api/v1/inventory/movements/history/`.
 
-### Task 20.3: Fix Wanted-Request Data Loss
-**Files**: `wanted/api/serializers.py`, `wanted/api/views.py`,
-`wanted/services.py`
+### Task 20.3: Fix Wanted-Request Data Loss ✅
+**Files**: `wanted/services.py`
 
-- [ ] Add Customer input to the serializer.
-- [ ] Save `brand`.
-- [ ] Save `created_by=user` on `WantedCustomerRequest`.
-- [ ] Align `get_or_create` fields with the `(store, product_name, size)`
+- ✅ Add Customer input to the serializer.
+- ✅ Save `brand`.
+- ✅ Save `created_by=user` on `WantedCustomerRequest`.
+- ✅ Align `get_or_create` fields with the `(store, product_name, size)`
       database uniqueness constraint.
-- [ ] Make `wanted_count` increments concurrency-safe.
+- ✅ Make `wanted_count` increments concurrency-safe using `select_for_update()`.
 
-### Task 20.4: Fix Sale Creation and Item Responses
+### Task 20.4: Fix Sale Creation and Item Responses ✅
 
-- [ ] Resolve the mismatch where `payment_method` is optional in the serializer
-      but required by the database. For the current MVP, make it required.
-- [ ] Make `add_sale_item()` return the created SaleItem.
-- [ ] Set `serializer.instance` so the response includes unit and final prices.
-- [ ] Reject negative discounts and discounts above the line subtotal.
+- ✅ `payment_method` is required (aligns with DB constraint).
+- ✅ `add_sale_item()` already returned the created SaleItem.
+- ✅ Converted `SaleItemCreateSerializer` from `serializers.Serializer` to
+      `serializers.ModelSerializer` so `serializer.instance` properly
+      serializes `product_name`, `size`, `unit_price`, `final_price`.
+- ✅ Reject negative discounts and discounts above the line subtotal.
 
-### Task 20.5: Complete OpenAPI Schemas
-Add explicit request/response schema information for Dashboard and
-SaleComplete. Reconcile generated paths with URL modules and reach zero schema
-generation errors.
+### Task 20.5: Complete OpenAPI Schemas ✅
+Added explicit `@extend_schema` decorators to `DashboardView`,
+`SaleCompleteView`, and `SaleCancelView`. Zero schema generation errors.
 
 ---
 
