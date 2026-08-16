@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from django.http import Http404
 from drf_spectacular.utils import extend_schema
 
@@ -87,17 +88,21 @@ class DashboardView(APIView):
 
         store = membership.store
 
+        # ── date validation ────────────────────────────────────────────────
+        def parse_date(param_name, default):
+            value = request.GET.get(param_name)
+            if not value:
+                return default
+            try:
+                return timezone.datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                raise ValidationError({param_name: "Date must use YYYY-MM-DD format."})
 
-        date_from = request.GET.get(
-            "date_from",
-            timezone.localdate()
-        )
+        date_from = parse_date("date_from", timezone.localdate())
+        date_to = parse_date("date_to", timezone.localdate())
 
-
-        date_to = request.GET.get(
-            "date_to",
-            timezone.localdate()
-        )
+        if date_from > date_to:
+            raise ValidationError({"date_to": "date_to must be on or after date_from."})
 
 
         return Response({

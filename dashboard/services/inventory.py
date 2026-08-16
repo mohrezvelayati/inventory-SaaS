@@ -1,21 +1,17 @@
 from django.conf import settings
+from django.db.models import Sum, Count
 
 from catalog.models import ProductVariant
 
 
 def get_inventory_overview(*, store):
 
-    variants = ProductVariant.objects.filter(
+    return ProductVariant.objects.filter(
         product__store=store
-    )
-
-    return {
-        'total_variants': variants.count(),
-        'total_stock': sum(
-            v.current_stock
-            for v in variants
-        )
-    }
+    ).aggregate(
+        total_variants=Count('id'),
+        total_stock=Sum('current_stock'),
+    ) or {'total_variants': 0, 'total_stock': 0}
 
 
 
