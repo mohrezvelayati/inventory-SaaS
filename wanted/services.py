@@ -22,7 +22,8 @@ def create_wanted(
     if customer is not None and customer.store_id != store.id:
         raise ValidationError('Customer does not belong to the store')
     
-    wanted_product, created = WantedProduct.objects.get_or_create(
+    # select_for_update prevents concurrent requests from reading/stale count
+    wanted_product, created = WantedProduct.objects.select_for_update().get_or_create(
         store=store,
         product_name=product_name,
         size=size,
