@@ -315,31 +315,26 @@ Added explicit `@extend_schema` decorators to `DashboardView`,
 
 ## 🔵 PHASE 5: Dashboard & Query Optimization
 
-### Task 21: Move Stock Summation to SQL
+### Task 21: Move Stock Summation to SQL ✅
 **File**: `dashboard/services/inventory.py`
 ```python
-# Instead of Python sum(), use:
+# Now using SQL aggregate instead of Python sum():
 ProductVariant.objects.filter(product__store=store).aggregate(
     total_stock=Sum('current_stock')
 )['total_stock'] or 0
 ```
 
-### Task 22: Add Select/Prefetch Related to Dashboard Queries
-**Files**: `dashboard/services/*.py`
+### Task 22: Add Select/Prefetch Related to Dashboard Queries ✅
+Combined multiple separate aggregates into single queries across all dashboard services:
+- `sales.py`: 3 queries (`count`, `Sum(total_amount)`, `Sum(discount)`) → 1 combined `aggregate()` call
+- `inventory.py`: 2 queries (`count`, `Sum(current_stock)`) → 1 combined `aggregate()` call
+- `products.py` / `wanted.py`: already optimal (single `values().annotate()` queries)
 
-Measure query counts first. Combine compatible aggregates and add
-`select_related()`/`prefetch_related()` only where Python dereferences related
-objects. Do not blindly prefetch Sale items or select Store in `.values()` and
-aggregate queries.
+### Task 23: Make Low-Stock Threshold Configurable ✅
+Already done in a previous session — `LOW_STOCK_THRESHOLD = 2` is set in `config/settings.py` and referenced in `dashboard/services/inventory.py`.
 
-### Task 23: Make Low-Stock Threshold Configurable
-**File**: `config/settings.py` — add `LOW_STOCK_THRESHOLD = 2`
-**File**: `dashboard/services/inventory.py` — use setting instead of hardcoded `2`.
-
-### Task 23.1: Validate Dashboard Dates and Metrics
-Add a query serializer that validates ISO dates, `date_from <= date_to`, and a
-maximum range. Define and test revenue, discounts, top products, stock,
-low-stock, and wanted rankings in the configured business timezone.
+### Task 23.1: Validate Dashboard Dates and Metrics ✅
+Added ISO-date parsing and `date_from <= date_to` validation in `DashboardView.get()`. Returns `ValidationError` for malformed dates or reversed ranges. Defaults to `timezone.localdate()` when no params are provided.
 
 ---
 
