@@ -86,6 +86,7 @@ class SaleItemCreateSerializer(serializers.ModelSerializer):
         model = SaleItem
         fields = [
             "id",
+            "variant",
             "product_name",
             "size",
             "quantity",
