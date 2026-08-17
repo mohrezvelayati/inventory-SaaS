@@ -8,7 +8,7 @@ from rest_framework.exceptions import ValidationError
 from django.conf import settings
 
 from catalog.permissions import CanManageCatalog
-from catalog.models import Category, Product
+from catalog.models import Category, Product, ProductVariant
 from catalog.api.serializers import CategorySerializer, ProductSerializer, ProductVariantSerializer
 from catalog.services import create_category, create_product, create_variant, update_product, update_variant
 from stores.services import get_current_membership, MembershipResolutionError
@@ -27,7 +27,9 @@ class CategoryListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        return Category.objects.filter(store=membership.store)
+        return Category.objects.filter(
+            store=membership.store
+        ).order_by('id')
     
 
 
@@ -72,7 +74,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
 
 
         stock_status = self.request.query_params.get("stock_status")
-        
+
         if stock_status:
             allowed_statuses = {
                 "in_stock",
@@ -80,32 +82,32 @@ class ProductListCreateView(generics.ListCreateAPIView):
                 "out_of_stock",
             }
 
-        if stock_status not in allowed_statuses:
-            raise ValidationError({
-                "stock_status": "Invalid stock status."
-            })
+            if stock_status not in allowed_statuses:
+                raise ValidationError({
+                    "stock_status": "Invalid stock status."
+                })
 
-        products = products.annotate(
-            total_stock=Coalesce(
-                Sum("variants__current_stock"),
-                Value(0),
-                output_field=BigIntegerField(),
-            )
-        )
-
-        if stock_status == "out_of_stock":
-            products = products.filter(total_stock=0)
-
-        elif stock_status == "low_stock":
-            products = products.filter(
-                total_stock__gt=0,
-                total_stock__lte=settings.LOW_STOCK_THRESHOLD,
+            products = products.annotate(
+                total_stock=Coalesce(
+                    Sum("variants__current_stock"),
+                    Value(0),
+                    output_field=BigIntegerField(),
+                )
             )
 
-        else:
-            products = products.filter(
-                total_stock__gt=settings.LOW_STOCK_THRESHOLD
-            )
+            if stock_status == "out_of_stock":
+                products = products.filter(total_stock=0)
+
+            elif stock_status == "low_stock":
+                products = products.filter(
+                    total_stock__gt=0,
+                    total_stock__lte=settings.LOW_STOCK_THRESHOLD,
+                )
+
+            else:
+                products = products.filter(
+                    total_stock__gt=settings.LOW_STOCK_THRESHOLD
+                )
 
         return (
             products
@@ -201,6 +203,7 @@ class ProductVariantListView(generics.ListAPIView):
             ProductVariant.objects
             .filter(product__store_id=membership.store_id)
             .select_related('product')
+            .order_by('id')
         )
 
 

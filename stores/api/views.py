@@ -50,7 +50,9 @@ class MembershipListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError:
             raise Http404('You do not belong to any store')
 
-        return StoreMembership.objects.filter(store=membership.store)
+        return StoreMembership.objects.filter(
+            store=membership.store
+        ).order_by('id')
 
     def perform_create(self, serializer):
         try:

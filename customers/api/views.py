@@ -19,7 +19,9 @@ class CustomerListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        return Customer.objects.filter(store=membership.store)
+        return Customer.objects.filter(
+            store=membership.store
+        ).order_by('id')
 
 
     def perform_create(self, serializer):

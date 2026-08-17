@@ -57,6 +57,7 @@ class InventoryListView(generics.ListAPIView):
             ProductVariant.objects
             .filter(product__store_id=membership.store_id)
             .select_related('product')
+            .order_by('id')
         )
 
 
