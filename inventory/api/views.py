@@ -7,7 +7,11 @@ from rest_framework.exceptions import ValidationError
 from catalog.models import ProductVariant
 from inventory.models import InventoryMovement
 from inventory.services import create_inventory_movement
-from inventory.api.serializers import InventoryMovementSerializer, InventorySerializer
+from inventory.api.serializers import (
+    InventoryMovementCreateSerializer,
+    InventoryMovementHistorySerializer,
+    InventorySerializer,
+)
 from inventory.permissions import CanManageInventory, CanViewInventory
 from stores.services import get_current_membership, MembershipResolutionError
 
@@ -15,7 +19,7 @@ from stores.services import get_current_membership, MembershipResolutionError
 
 class InventoryMovementCreateView(generics.CreateAPIView):
 
-    serializer_class = InventoryMovementSerializer
+    serializer_class = InventoryMovementCreateSerializer
 
     permission_classes = [IsAuthenticated, CanManageInventory]
 
@@ -58,7 +62,7 @@ class InventoryListView(generics.ListAPIView):
 
 class InventoryMovementHistoryView(generics.ListAPIView):
 
-    serializer_class = InventoryMovementSerializer
+    serializer_class = InventoryMovementHistorySerializer
     permission_classes = [IsAuthenticated, CanViewInventory]
 
     def get_queryset(self):
@@ -73,13 +77,23 @@ class InventoryMovementHistoryView(generics.ListAPIView):
             .select_related('variant__product', 'created_by')
         )
 
+        product_id_value = self.request.query_params.get('product_id')
+        if product_id_value is not None:
+            product_id_value = self._parse_id(product_id_value, 'product_id')
+            queryset = queryset.filter(variant__product_id=product_id_value)
+
         variant_id_value = self.request.query_params.get('variant_id')
         if variant_id_value is not None:
-            try:
-                variant_id_value = int(variant_id_value)
-            except (ValueError, TypeError):
-                raise ValidationError({'variant_id': 'A valid integer is required.'})
+            variant_id_value = self._parse_id(variant_id_value, 'variant_id')
             queryset = queryset.filter(variant_id=variant_id_value)
+
+        created_by_id_value = self.request.query_params.get('created_by_id')
+        if created_by_id_value is not None:
+            created_by_id_value = self._parse_id(
+                created_by_id_value,
+                'created_by_id',
+            )
+            queryset = queryset.filter(created_by_id=created_by_id_value)
 
         type_filter = self.request.query_params.get('type')
         if type_filter is not None:
@@ -108,6 +122,22 @@ class InventoryMovementHistoryView(generics.ListAPIView):
             queryset = queryset.filter(created_at__date__lte=date_to)
 
         return queryset.order_by('-created_at', '-id')
+
+    @staticmethod
+    def _parse_id(value, name):
+        try:
+            parsed_value = int(value)
+        except (ValueError, TypeError) as error:
+            raise ValidationError({
+                name: 'A valid positive integer is required.'
+            }) from error
+
+        if parsed_value <= 0:
+            raise ValidationError({
+                name: 'A valid positive integer is required.'
+            })
+
+        return parsed_value
 
     @staticmethod
     def _parse_date(value, name):
