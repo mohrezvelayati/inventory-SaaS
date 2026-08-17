@@ -1,7 +1,7 @@
 from django.db.models import Sum, Count
 
 
-from sales.models import Sale
+from sales.models import Sale, SaleItem
 
 
 
@@ -14,14 +14,19 @@ def get_sales_overview(*, store, date_from, date_to):
         created_at__date__range=[date_from, date_to]
     )
 
-    agg = sales.aggregate(
+    sales_summary = sales.aggregate(
         orders_count=Count('id'),
         revenue=Sum('total_amount'),
-        discount=Sum('items__discount'),
-    ) or {'orders_count': 0, 'revenue': 0, 'discount': 0}
+    )
+    discount = (
+        SaleItem.objects.filter(sale__in=sales).aggregate(
+            total=Sum('discount')
+        )['total']
+        or 0
+    )
 
     return {
-        'orders_count': agg['orders_count'],
-        'revenue': agg['revenue'],
-        'discount': agg['discount'],
+        'orders_count': sales_summary['orders_count'],
+        'revenue': sales_summary['revenue'] or 0,
+        'discount': discount,
     }

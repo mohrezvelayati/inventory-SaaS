@@ -206,3 +206,6 @@ SPECTACULAR_SETTINGS = {
 
 # Low Stock Threshold
 LOW_STOCK_THRESHOLD = 2
+
+# Maximum period accepted by the dashboard API.
+DASHBOARD_MAX_DATE_RANGE_DAYS = 90
