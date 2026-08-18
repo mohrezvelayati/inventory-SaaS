@@ -78,6 +78,72 @@ def add_sale_item(*, sale, variant, quantity, discount=0):
     return sale_item
 
 
+@transaction.atomic
+def update_sale_item(*, sale_item, quantity=None, discount=None):
+    sale = Sale.objects.select_for_update().get(pk=sale_item.sale_id)
+
+    if sale.status != Sale.StatusChoices.DRAFT:
+        raise ValidationError('Only draft sales can be modified.')
+
+    sale_item = SaleItem.objects.select_for_update().get(pk=sale_item.pk, sale_id=sale.id)
+
+    if quantity is None:
+        quantity = sale_item.quantity
+
+    if discount is None:
+        discount = sale_item.discount
+
+    if quantity <= 0:
+        raise ValidationError({
+            'quantity': 'Quantity must be greater than zero.'
+        })
+
+    if discount < 0:
+        raise ValidationError({
+            'discount': 'Discount cannot be negative.'
+        })
+
+    line_subtotal = sale_item.unit_price * quantity
+
+    if discount > line_subtotal:
+        raise ValidationError({
+            'discount': 'Discount cannot exceed the line subtotal.'
+        })
+
+    sale_item.quantity = quantity
+    sale_item.discount = discount
+    sale_item.final_price = line_subtotal - discount
+
+    sale_item.save(
+        update_fields=[
+            'quantity',
+            'discount',
+            'final_price',
+        ]
+    )
+
+    update_sale_total(sale)
+
+    return sale_item
+
+
+@transaction.atomic
+def delete_sale_item(*, sale_item):
+    sale = Sale.objects.select_for_update().get(pk=sale_item.sale_id)
+
+    if sale.status != Sale.StatusChoices.DRAFT:
+        raise ValidationError(
+            'Only draft sales can be modified.'
+        )
+
+    locked_sale_item = SaleItem.objects.select_for_update().get(
+        pk=sale_item.pk,
+        sale_id=sale.id,
+    )
+
+    locked_sale_item.delete()
+    update_sale_total(sale)
+
 
 ### Update sale total amount ###
 def update_sale_total(sale):

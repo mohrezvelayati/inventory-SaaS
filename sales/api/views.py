@@ -10,9 +10,21 @@ from rest_framework.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema
 
 
-from sales.api.serializers import SaleCreateSerializer, SaleSerializer, SaleItemCreateSerializer
-from sales.services import cancel_sale, create_sale, add_sale_item, complete_sale
-from sales.models import Sale
+from sales.api.serializers import (
+    SaleCreateSerializer,
+    SaleItemCreateSerializer,
+    SaleItemUpdateSerializer,
+    SaleSerializer,
+)
+from sales.services import (
+    add_sale_item,
+    cancel_sale,
+    complete_sale,
+    create_sale,
+    delete_sale_item,
+    update_sale_item,
+)
+from sales.models import Sale, SaleItem
 from stores.services import get_current_membership, MembershipResolutionError
 from sales.permissions import CanCreateSale, CanViewSales
 
@@ -86,6 +98,51 @@ class SaleItemCreateView(generics.CreateAPIView):
         }
     },
 )
+
+
+class SaleItemDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = SaleItemUpdateSerializer
+    permission_classes = [IsAuthenticated, CanCreateSale]
+    lookup_url_kwarg = 'item_id'
+
+    http_method_names = [
+        'patch',
+        'delete',
+        'head',
+        'options',
+    ]
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Sale item not found.') from error
+
+        return (
+            SaleItem.objects
+            .filter(
+                sale_id=self.kwargs['sale_id'],
+                sale__store_id=membership.store_id,
+            )
+            .select_related(
+                'sale',
+                'variant__product',
+            )
+        )
+
+    def perform_update(self, serializer):
+        updated_sale_item = update_sale_item(
+            sale_item=serializer.instance,
+            quantity=serializer.validated_data.get('quantity'),
+            discount=serializer.validated_data.get('discount'),
+        )
+
+        serializer.instance = updated_sale_item
+
+    def perform_destroy(self, instance):
+        delete_sale_item(sale_item=instance)
+
+
 class SaleCompleteView(APIView):
 
     permission_classes = [IsAuthenticated, CanCreateSale]

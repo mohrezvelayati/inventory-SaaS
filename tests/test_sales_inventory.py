@@ -272,6 +272,143 @@ class SaleFlowTests(TestCase):
         self.assertEqual(response.data['results'][0]['id'], matching.id)
 
 
+    def test_update_draft_sale_item_recalculates_totals(self):
+        sale = create_sale(self.store, self.membership)
+
+        create_response = self.client.post(
+            f'/api/v1/sales/{sale.id}/items/',
+            {
+                'variant': self.variant.id,
+                'quantity': 2,
+                'discount': 0,
+            },
+            format='json',
+        )
+
+        item_id = create_response.data['id']
+
+        invalid_response = self.client.patch(
+            f'/api/v1/sales/{sale.id}/items/{item_id}/',
+            {
+                'quantity': 1,
+                'discount': 1001,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            invalid_response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        sale.refresh_from_db()
+        sale_item = SaleItem.objects.get(id=item_id)
+
+        self.assertEqual(sale_item.quantity, 2)
+        self.assertEqual(int(sale.total_amount), 2000)
+
+        response = self.client.patch(
+            f'/api/v1/sales/{sale.id}/items/{item_id}/',
+            {
+                'quantity': 3,
+                'discount': 100,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['variant'], self.variant.id)
+        self.assertEqual(response.data['quantity'], 3)
+        self.assertEqual(int(response.data['discount']), 100)
+        self.assertEqual(int(response.data['final_price']), 2900)
+
+        sale.refresh_from_db()
+        sale_item.refresh_from_db()
+
+        self.assertEqual(sale_item.quantity, 3)
+        self.assertEqual(int(sale_item.final_price), 2900)
+        self.assertEqual(int(sale.total_amount), 2900)
+
+
+    def test_delete_draft_sale_item_recalculates_sale_total(self):
+        sale = create_sale(self.store, self.membership)
+
+        create_response = self.client.post(
+            f'/api/v1/sales/{sale.id}/items/',
+            {
+                'variant': self.variant.id,
+                'quantity': 2,
+                'discount': 100,
+            },
+            format='json',
+        )
+
+        item_id = create_response.data['id']
+
+        response = self.client.delete(
+            f'/api/v1/sales/{sale.id}/items/{item_id}/'
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_204_NO_CONTENT,
+        )
+        self.assertFalse(
+            SaleItem.objects.filter(id=item_id).exists()
+        )
+
+        sale.refresh_from_db()
+        self.assertEqual(int(sale.total_amount), 0)
+
+
+    def test_completed_sale_items_cannot_be_updated_or_deleted(self):
+        sale = create_sale(self.store, self.membership)
+
+        create_response = self.client.post(
+            f'/api/v1/sales/{sale.id}/items/',
+            {
+                'variant': self.variant.id,
+                'quantity': 1,
+            },
+            format='json',
+        )
+
+        item_id = create_response.data['id']
+
+        complete_response = self.client.post(
+            f'/api/v1/sales/{sale.id}/complete/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(
+            complete_response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        update_response = self.client.patch(
+            f'/api/v1/sales/{sale.id}/items/{item_id}/',
+            {'quantity': 2},
+            format='json',
+        )
+
+        delete_response = self.client.delete(
+            f'/api/v1/sales/{sale.id}/items/{item_id}/'
+        )
+
+        self.assertEqual(
+            update_response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(
+            delete_response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertTrue(
+            SaleItem.objects.filter(id=item_id).exists()
+        )
+
+
 class InventoryApiTests(TestCase):
     def setUp(self):
         self.user = create_user()

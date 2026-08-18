@@ -15,6 +15,7 @@ class SaleItemSerializer(serializers.ModelSerializer):
         model = SaleItem
         fields = [
             "id",
+            "variant",
             "product_name",
             "size",
             "quantity",
@@ -109,3 +110,20 @@ class SaleItemCreateSerializer(serializers.ModelSerializer):
         self.fields['variant'].queryset = ProductVariant.objects.filter(
             product__store_id=membership.store_id
         )
+
+
+class SaleItemUpdateSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    variant = serializers.PrimaryKeyRelatedField(read_only=True)
+    product_name = serializers.CharField(source='variant.product.name', read_only=True)
+    size = serializers.CharField(source='variant.size', read_only=True)
+    quantity = serializers.IntegerField(min_value=1, required=False)
+    discount = serializers.DecimalField(max_digits=12, decimal_places=0, min_value=0, required=False)
+    unit_price = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
+    final_price = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError('Provide quantity or discount.')
+
+        return attrs

@@ -2,13 +2,14 @@ from django.test import TestCase
 from rest_framework import status
 
 from inventory.models import InventoryMovement
-from stores.models import StoreMembership
+from sales.models import SaleItem
 from tests.factories import (
     authenticated_client,
     create_category,
     create_customer,
     create_product,
     create_sale,
+    create_sale_item,
     create_store,
     create_user,
     create_variant,
@@ -122,3 +123,38 @@ class TenantIsolationTests(TestCase):
     def test_cannot_retrieve_other_store_wanted_product(self):
         response = self.client.get(f'/api/v1/wanted/{self.wanted_b.id}/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+    def test_cannot_update_or_delete_other_store_sale_item(self):
+        sale_item_b = create_sale_item(
+            self.sale_b,
+            self.variant_b,
+        )
+
+        update_response = self.client.patch(
+            (
+                f'/api/v1/sales/{self.sale_b.id}/'
+                f'items/{sale_item_b.id}/'
+            ),
+            {'quantity': 2},
+            format='json',
+        )
+
+        delete_response = self.client.delete(
+            (
+                f'/api/v1/sales/{self.sale_b.id}/'
+                f'items/{sale_item_b.id}/'
+            )
+        )
+
+        self.assertEqual(
+            update_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            delete_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertTrue(
+            SaleItem.objects.filter(id=sale_item_b.id).exists()
+        )
