@@ -46,14 +46,15 @@ class SaleSerializer(serializers.ModelSerializer):
         ]
 
 
-
-
-
 class SaleCreateSerializer(serializers.Serializer):
-
+    id = serializers.IntegerField(read_only=True)
     customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.none(), required=False, allow_null=True)
     channel = serializers.ChoiceField(choices=Sale.ChannelChoices.choices)
     payment_method = serializers.ChoiceField(choices=Sale.PaymentChoices.choices)
+    status = serializers.ChoiceField(choices=Sale.StatusChoices.choices, read_only=True)
+    total_amount = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
+    items = SaleItemSerializer(many=True, read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -61,13 +62,13 @@ class SaleCreateSerializer(serializers.Serializer):
         request = self.context.get('request')
         if request is None or not request.user.is_authenticated:
             return
+
         try:
             membership = get_current_membership(request.user)
         except MembershipResolutionError:
             return
 
         self.fields['customer'].queryset = Customer.objects.filter(store_id=membership.store_id)
-
 
 
 class SaleItemCreateSerializer(serializers.ModelSerializer):

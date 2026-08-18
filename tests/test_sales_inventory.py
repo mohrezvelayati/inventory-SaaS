@@ -201,6 +201,45 @@ class SaleFlowTests(TestCase):
         self.assertEqual(excessive_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(SaleItem.objects.count(), 0)
 
+    def test_sale_creation_returns_created_sale_context(self):
+        response = self.client.post(
+            '/api/v1/sales/create/',
+            {
+                'channel': Sale.ChannelChoices.STORE,
+                'payment_method': Sale.PaymentChoices.CARD,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        sale = Sale.objects.get(id=response.data['id'])
+
+        self.assertEqual(sale.store, self.store)
+        self.assertEqual(sale.seller, self.membership)
+        self.assertEqual(sale.status, Sale.StatusChoices.DRAFT)
+
+        self.assertEqual(response.data['id'], sale.id)
+        self.assertIsNone(response.data['customer'])
+        self.assertEqual(
+            response.data['channel'],
+            Sale.ChannelChoices.STORE,
+        )
+        self.assertEqual(
+            response.data['payment_method'],
+            Sale.PaymentChoices.CARD,
+        )
+        self.assertEqual(
+            response.data['status'],
+            Sale.StatusChoices.DRAFT,
+        )
+        self.assertEqual(int(response.data['total_amount']), 0)
+        self.assertEqual(response.data['items'], [])
+        self.assertIn('created_at', response.data)
+
     def test_sale_creation_requires_payment_method(self):
         response = self.client.post(
             '/api/v1/sales/create/',
