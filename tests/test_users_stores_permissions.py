@@ -4,9 +4,11 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from stores.models import Permission, StoreMembership
+from sales.models import Sale
 from tests.factories import (
     authenticated_client,
     create_product,
+    create_sale,
     create_store,
     create_user,
     create_variant,
@@ -301,4 +303,39 @@ class CapabilityPermissionTests(TestCase):
         self.assertEqual(
             inventory_response.status_code,
             status.HTTP_201_CREATED,
+        )
+
+
+    def test_deleting_draft_requires_create_sale_capability(self):
+        grant_permission(self.membership, 'view_sales')
+
+        sale = create_sale(
+            self.store,
+            self.membership,
+        )
+
+        denied_response = self.client.delete(
+            f'/api/v1/sales/{sale.id}/'
+        )
+
+        self.assertEqual(
+            denied_response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertTrue(
+            Sale.objects.filter(id=sale.id).exists()
+        )
+
+        grant_permission(self.membership, 'create_sale')
+
+        allowed_response = self.client.delete(
+            f'/api/v1/sales/{sale.id}/'
+        )
+
+        self.assertEqual(
+            allowed_response.status_code,
+            status.HTTP_204_NO_CONTENT,
+        )
+        self.assertFalse(
+            Sale.objects.filter(id=sale.id).exists()
         )

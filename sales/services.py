@@ -25,6 +25,21 @@ def create_sale(*, store, seller, customer=None, channel, payment_method):
 
     return sale
 
+@transaction.atomic
+def delete_draft_sale(*, sale):
+    locked_sale = (
+        Sale.objects
+        .select_for_update()
+        .get(pk=sale.pk)
+    )
+
+    if locked_sale.status != Sale.StatusChoices.DRAFT:
+        raise ValidationError({
+            'sale': 'Only draft sales can be deleted.'
+        })
+
+    locked_sale.delete()
+
 
 ### Add item to sale ###
 @transaction.atomic

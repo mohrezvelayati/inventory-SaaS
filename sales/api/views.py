@@ -21,6 +21,7 @@ from sales.services import (
     cancel_sale,
     complete_sale,
     create_sale,
+    delete_draft_sale,
     delete_sale_item,
     update_sale_item,
 )
@@ -169,10 +170,21 @@ class SaleCompleteView(APIView):
         )
     
 
-class SaleDetailView(generics.RetrieveAPIView):
+class SaleDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = SaleSerializer
     permission_classes = [IsAuthenticated, CanViewSales]
     lookup_url_kwarg = 'sale_id'
+
+    def get_permissions(self):
+        permission_classes = self.permission_classes
+
+        if self.request.method == 'DELETE':
+            permission_classes = [IsAuthenticated, CanCreateSale]
+
+        return [
+            permission()
+            for permission in permission_classes
+        ]
 
     def get_queryset(self):
         try:
@@ -186,6 +198,8 @@ class SaleDetailView(generics.RetrieveAPIView):
             .prefetch_related('items__variant__product')
         )
 
+    def perform_destroy(self, instance):
+        delete_draft_sale(sale=instance)
 
 
 class SaleListView(generics.ListAPIView):

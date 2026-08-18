@@ -2,7 +2,7 @@ from django.test import TestCase
 from rest_framework import status
 
 from inventory.models import InventoryMovement
-from sales.models import SaleItem
+from sales.models import Sale, SaleItem
 from tests.factories import (
     authenticated_client,
     create_category,
@@ -157,4 +157,18 @@ class TenantIsolationTests(TestCase):
         )
         self.assertTrue(
             SaleItem.objects.filter(id=sale_item_b.id).exists()
+        )
+
+    def test_cannot_delete_other_store_draft_sale(self):
+        response = self.client.delete(
+            f'/api/v1/sales/{self.sale_b.id}/'
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        self.assertTrue(
+            Sale.objects.filter(id=self.sale_b.id).exists()
         )

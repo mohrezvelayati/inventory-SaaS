@@ -408,6 +408,88 @@ class SaleFlowTests(TestCase):
             SaleItem.objects.filter(id=item_id).exists()
         )
 
+    def test_delete_draft_sale_removes_items_without_changing_stock(self):
+        sale = create_sale(self.store, self.membership)
+
+        item_response = self.client.post(
+            f'/api/v1/sales/{sale.id}/items/',
+            {
+                'variant': self.variant.id,
+                'quantity': 2,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            item_response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        sale_item_id = item_response.data['id']
+
+        response = self.client.delete(
+            f'/api/v1/sales/{sale.id}/'
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_204_NO_CONTENT,
+        )
+
+        self.assertFalse(
+            Sale.objects.filter(id=sale.id).exists()
+        )
+        self.assertFalse(
+            SaleItem.objects.filter(id=sale_item_id).exists()
+        )
+
+        self.variant.refresh_from_db()
+
+        self.assertEqual(self.variant.current_stock, 10)
+        self.assertEqual(InventoryMovement.objects.count(), 0)
+
+    def test_completed_sale_cannot_be_deleted(self):
+        sale = create_sale(self.store, self.membership)
+
+        self.client.post(
+            f'/api/v1/sales/{sale.id}/items/',
+            {
+                'variant': self.variant.id,
+                'quantity': 2,
+            },
+            format='json',
+        )
+
+        complete_response = self.client.post(
+            f'/api/v1/sales/{sale.id}/complete/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(
+            complete_response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        response = self.client.delete(
+            f'/api/v1/sales/{sale.id}/'
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        sale.refresh_from_db()
+        self.variant.refresh_from_db()
+
+        self.assertEqual(
+            sale.status,
+            Sale.StatusChoices.COMPLETED,
+        )
+        self.assertEqual(self.variant.current_stock, 8)
+        self.assertEqual(InventoryMovement.objects.count(), 1)
+
 
 class InventoryApiTests(TestCase):
     def setUp(self):
