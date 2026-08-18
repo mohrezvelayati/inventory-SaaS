@@ -3,7 +3,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from stores.models import StoreMembership
+from stores.models import Permission, StoreMembership
 from tests.factories import (
     authenticated_client,
     create_product,
@@ -39,12 +39,75 @@ class UserApiTests(TestCase):
         response = APIClient().get('/api/v1/users/me/')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_me_returns_authenticated_user(self):
+    def test_me_returns_authenticated_user_without_membership(self):
         user = create_user()
+
         response = authenticated_client(user).get('/api/v1/users/me/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['id'], user.id)
+        self.assertIsNone(response.data['membership'])
+
+    def test_me_returns_manager_store_role_and_effective_permissions(self):
+        user = create_user()
+        store, membership = create_store(user)
+
+        Permission.objects.get_or_create(
+            code='manage_catalog',
+            defaults={'name': 'Manage Catalog'},
+        )
+
+        response = authenticated_client(user).get('/api/v1/users/me/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        membership_data = response.data['membership']
+
+        self.assertEqual(membership_data['id'], membership.id)
+        self.assertEqual(
+            membership_data['role'],
+            StoreMembership.RoleChoices.MANAGER,
+        )
+        self.assertEqual(membership_data['store']['id'], store.id)
+        self.assertEqual(membership_data['store']['name'], store.name)
+        self.assertIn(
+            'manage_catalog',
+            membership_data['permissions'],
+        )
+
+    def test_me_returns_only_assigned_permissions_for_seller(self):
+        user = create_user()
+        store, membership = create_store(
+            user,
+            role=StoreMembership.RoleChoices.SELLER,
+        )
+
+        grant_permission(membership, 'create_sale')
+
+        Permission.objects.get_or_create(
+            code='manage_catalog',
+            defaults={'name': 'Manage Catalog'},
+        )
+
+        response = authenticated_client(user).get('/api/v1/users/me/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        membership_data = response.data['membership']
+
+        self.assertEqual(membership_data['store']['id'], store.id)
+        self.assertEqual(
+            membership_data['role'],
+            StoreMembership.RoleChoices.SELLER,
+        )
+        self.assertEqual(
+            membership_data['permissions'],
+            ['create_sale'],
+        )
+        self.assertNotIn(
+            'manage_catalog',
+            membership_data['permissions'],
+        )
 
     def test_jwt_login_returns_access_and_refresh_tokens(self):
         user = create_user(username='login-user')
