@@ -87,20 +87,6 @@ class SaleItemCreateView(generics.CreateAPIView):
 
 
 
-@extend_schema(
-    tags=["sales"],
-    description="تکمیل یک فاکتور (تغییر وضعیت به completed)",
-    methods=["POST"],
-    request=None,
-    responses={
-        200: {
-            "type": "object",
-            "properties": {"message": {"type": "string"}},
-        }
-    },
-)
-
-
 class SaleItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = SaleItemUpdateSerializer
     permission_classes = [IsAuthenticated, CanCreateSale]
@@ -144,6 +130,18 @@ class SaleItemDetailView(generics.RetrieveUpdateDestroyAPIView):
         delete_sale_item(sale_item=instance)
 
 
+@extend_schema(
+    tags=["sales"],
+    description="تکمیل یک فاکتور (تغییر وضعیت به completed)",
+    methods=["POST"],
+    request=None,
+    responses={
+        200: {
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+        }
+    },
+)
 class SaleCompleteView(APIView):
 
     permission_classes = [IsAuthenticated, CanCreateSale]

@@ -114,7 +114,7 @@ class SaleItemCreateSerializer(serializers.ModelSerializer):
 
 class SaleItemUpdateSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
-    variant = serializers.PrimaryKeyRelatedField(read_only=True)
+    variant = serializers.IntegerField(source='variant_id', read_only=True)
     product_name = serializers.CharField(source='variant.product.name', read_only=True)
     size = serializers.CharField(source='variant.size', read_only=True)
     quantity = serializers.IntegerField(min_value=1, required=False)
