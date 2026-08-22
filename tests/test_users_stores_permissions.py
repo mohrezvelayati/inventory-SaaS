@@ -124,6 +124,28 @@ class UserApiTests(TestCase):
         self.assertIn('access', response.data)
         self.assertIn('refresh', response.data)
 
+    def test_user_can_update_only_their_profile_fields(self):
+        user = create_user(username='profile-user')
+        client = authenticated_client(user)
+
+        response = client.patch(
+            '/api/v1/users/me/',
+            {
+                'username': 'updated-user',
+                'full_name': 'Updated Name',
+                'phone_number': '09120001122',
+                'membership': {'role': 'manager'},
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertEqual(user.username, 'updated-user')
+        self.assertEqual(user.full_name, 'Updated Name')
+        self.assertEqual(user.phone_number, '09120001122')
+        self.assertIsNone(response.data['membership'])
+
 
 class StoreMembershipTests(TestCase):
     def setUp(self):
@@ -139,6 +161,38 @@ class StoreMembershipTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_manager_can_view_and_rename_current_store(self):
+        get_response = self.client.get('/api/v1/stores/current/')
+        update_response = self.client.patch(
+            '/api/v1/stores/current/',
+            {'name': 'Renamed Store'},
+            format='json',
+        )
+
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(get_response.data['id'], self.store.id)
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.store.refresh_from_db()
+        self.assertEqual(self.store.name, 'Renamed Store')
+
+    def test_non_manager_cannot_update_store_settings(self):
+        seller = create_user()
+        StoreMembership.objects.create(
+            store=self.store,
+            user=seller,
+            role=StoreMembership.RoleChoices.SELLER,
+        )
+
+        response = authenticated_client(seller).patch(
+            '/api/v1/stores/current/',
+            {'name': 'Unauthorized Rename'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.store.refresh_from_db()
+        self.assertNotEqual(self.store.name, 'Unauthorized Rename')
 
     def test_database_rejects_second_membership_for_user(self):
         second_store, _ = create_store()

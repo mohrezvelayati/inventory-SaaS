@@ -1,6 +1,7 @@
 from django.urls import path
 from stores.api.views import (
     StoreCreateView,
+    CurrentStoreDetailView,
     MembershipListCreateView,
     MembershipDetailView,
     PermissionListView,
@@ -12,6 +13,7 @@ from stores.api.views import (
 
 urlpatterns = [
     path('', StoreCreateView.as_view(), name='store-create'),
+    path('current/', CurrentStoreDetailView.as_view(), name='store-current-detail'),
     path('members/', MembershipListCreateView.as_view(), name='membership-list-create'),
     path('members/<int:membership_id>/', MembershipDetailView.as_view(), name='membership-detail'),
     path('permissions/', PermissionListView.as_view(), name='permission-list'),

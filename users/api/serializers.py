@@ -60,6 +60,7 @@ class UserSerializer(serializers.ModelSerializer):
             'phone_number',
             'membership',
         ]
+        read_only_fields = ['id', 'membership']
 
     @extend_schema_field(
         CurrentMembershipSerializer(allow_null=True)

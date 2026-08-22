@@ -4,7 +4,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404
 
 from stores.permissions import CanManageMembers
-from stores.models import StoreMembership, Permission, MembershipPermission
+from stores.models import Store, StoreMembership, Permission, MembershipPermission
 from stores.api.serializers import (
     StoreSerializer,
     MembershipSerializer,
@@ -38,6 +38,20 @@ class StoreCreateView(generics.CreateAPIView):
             name=serializer.validated_data['name']
         )
         serializer.instance = store
+
+
+class CurrentStoreDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = StoreSerializer
+    permission_classes = [IsAuthenticated, CanManageMembers]
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_object(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        return get_object_or_404(Store, pk=membership.store_id)
 
 
 class MembershipListCreateView(generics.ListCreateAPIView):

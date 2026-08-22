@@ -311,6 +311,27 @@ class WantedApiTests(TestCase):
         self.assertEqual(product_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(customer_response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_wanted_can_be_updated_and_deleted(self):
+        wanted = create_wanted_product(
+            self.store,
+            product_name='Old Name',
+            brand='Old Brand',
+            size='40',
+        )
+
+        update_response = self.client.patch(
+            f'/api/v1/wanted/{wanted.id}/',
+            {'product_name': 'New Name', 'brand': 'New Brand', 'size': '41'},
+            format='json',
+        )
+        delete_response = self.client.delete(f'/api/v1/wanted/{wanted.id}/')
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data['product_name'], 'New Name')
+        self.assertEqual(update_response.data['brand'], 'New Brand')
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(WantedProduct.objects.filter(id=wanted.id).exists())
+
     def test_wanted_search_matches_name_brand_or_size(self):
         matching = create_wanted_product(
             self.store,

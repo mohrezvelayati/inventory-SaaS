@@ -13,7 +13,7 @@ class StoreSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         user = self.context['request'].user
 
-        if user.memberships.exists():
+        if self.instance is None and user.memberships.exists():
             raise serializers.ValidationError(
                 'You already belong to a store'
             )
