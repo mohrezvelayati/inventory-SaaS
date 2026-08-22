@@ -7,12 +7,15 @@ from drf_spectacular.utils import extend_schema
 from dashboard.api.serializers import (
     DashboardQuerySerializer,
     DashboardResponseSerializer,
+    ReportQuerySerializer,
+    ReportResponseSerializer,
 )
 from dashboard.permissions import CanViewDashboard
 from dashboard.services.sales import get_sales_overview
 from dashboard.services.inventory import get_inventory_overview, get_low_stock_products
 from dashboard.services.products import get_top_products
 from dashboard.services.wanted import get_top_wanted
+from dashboard.services.reports import get_store_report
 from stores.services import get_current_membership, MembershipResolutionError
 
 
@@ -78,3 +81,28 @@ class DashboardView(APIView):
             )
 
         })
+
+
+@extend_schema(
+    tags=['dashboard'],
+    description='گزارش تحلیلی فروش و موجودی فروشگاه',
+    parameters=[ReportQuerySerializer],
+    responses={200: ReportResponseSerializer},
+)
+class ReportView(APIView):
+    permission_classes = [IsAuthenticated, CanViewDashboard]
+
+    def get(self, request):
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        query = ReportQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        report = get_store_report(
+            store=membership.store,
+            date_from=query.validated_data['date_from'],
+            date_to=query.validated_data['date_to'],
+        )
+        return Response(ReportResponseSerializer(report).data)

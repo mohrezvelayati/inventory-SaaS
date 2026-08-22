@@ -112,3 +112,71 @@ class DashboardApiTests(TestCase):
 
         self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(allowed.status_code, status.HTTP_200_OK)
+
+    def test_report_returns_sales_profit_trends_and_inventory_values(self):
+        first_product = create_product(self.store, name='Runner')
+        first_variant = create_variant(
+            first_product,
+            purchase_price=400,
+            sale_price=1000,
+            current_stock=3,
+        )
+        second_variant = create_variant(
+            create_product(self.store, name='Boot'),
+            purchase_price=500,
+            sale_price=1200,
+            current_stock=0,
+        )
+        sale = create_sale(
+            self.store,
+            self.membership,
+            status=Sale.StatusChoices.COMPLETED,
+            channel=Sale.ChannelChoices.INSTAGRAM,
+            total_amount=Decimal('3000'),
+        )
+        create_sale_item(
+            sale,
+            first_variant,
+            quantity=2,
+            unit_price=Decimal('1000'),
+            discount=Decimal('200'),
+            final_price=Decimal('1800'),
+        )
+        create_sale_item(
+            sale,
+            second_variant,
+            quantity=1,
+            unit_price=Decimal('1200'),
+            final_price=Decimal('1200'),
+        )
+        first_variant.purchase_price = Decimal('9999')
+        first_variant.save(update_fields=['purchase_price'])
+        today = timezone.localdate().isoformat()
+
+        response = self.client.get('/api/v1/dashboard/reports/', {
+            'date_from': today,
+            'date_to': today,
+        })
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['sales']['orders_count'], 1)
+        self.assertEqual(Decimal(response.data['sales']['revenue']), Decimal('3000'))
+        self.assertEqual(Decimal(response.data['sales']['cost']), Decimal('1300'))
+        self.assertEqual(Decimal(response.data['sales']['gross_profit']), Decimal('1700'))
+        self.assertEqual(len(response.data['daily']), 1)
+        instagram = next(item for item in response.data['channels'] if item['channel'] == 'instagram')
+        self.assertEqual(instagram['orders_count'], 1)
+        self.assertEqual(response.data['products'][0]['product_name'], 'Runner')
+        self.assertEqual(response.data['inventory']['total_stock'], 3)
+        self.assertEqual(Decimal(response.data['inventory']['purchase_value']), Decimal('29997'))
+        self.assertEqual(response.data['inventory']['out_of_stock_count'], 1)
+
+    def test_report_defaults_to_thirty_days_and_validates_range(self):
+        response = self.client.get('/api/v1/dashboard/reports/')
+        invalid = self.client.get(
+            '/api/v1/dashboard/reports/?date_from=2026-01-01&date_to=2026-08-01'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['daily']), 30)
+        self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)

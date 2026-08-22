@@ -122,6 +122,7 @@ def create_sale_item(sale, variant, **overrides):
         variant=variant,
         quantity=quantity,
         unit_price=unit_price,
+        unit_cost=overrides.get('unit_cost', variant.purchase_price),
         discount=discount,
         final_price=overrides.get(
             'final_price',

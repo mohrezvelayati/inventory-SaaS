@@ -63,6 +63,7 @@ def add_sale_item(*, sale, variant, quantity, discount=0):
     
     # Get the current selling price
     unit_price = variant.sale_price
+    unit_cost = variant.purchase_price
     line_subtotal = unit_price * quantity
 
     if discount < 0:
@@ -83,6 +84,7 @@ def add_sale_item(*, sale, variant, quantity, discount=0):
         variant=variant,
         quantity=quantity,
         unit_price=unit_price,
+        unit_cost=unit_cost,
         discount=discount,
         final_price=line_total
     )

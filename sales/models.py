@@ -49,6 +49,7 @@ class SaleItem(models.Model):
     variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT,related_name="sale_items")
     quantity = models.PositiveBigIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=12,decimal_places=0)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=0)
     discount = models.DecimalField(max_digits=12, decimal_places=0, default=0)
     final_price = models.DecimalField(max_digits=12, decimal_places=0)
     created_at = models.DateTimeField(auto_now_add=True)

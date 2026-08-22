@@ -664,6 +664,7 @@ class ConcurrentCheckoutTests(TransactionTestCase):
                 variant=variant,
                 quantity=1,
                 unit_price=variant.sale_price,
+                unit_cost=variant.purchase_price,
                 discount=0,
                 final_price=variant.sale_price,
             )
