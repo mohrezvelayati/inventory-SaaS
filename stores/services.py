@@ -2,7 +2,7 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
 
-from stores.models import Store, StoreMembership, MembershipPermission
+from stores.models import Store, StoreMembership, MembershipPermission, Permission  
 
 
 ROLE_PERMISSIONS = {
@@ -22,7 +22,7 @@ ROLE_PERMISSIONS = {
 
 def assign_default_permissions(*, membership):
     role_permissions = ROLE_PERMISSIONS.get(membership.role, [])
-    Permission = MembershipPermission._meta.get_model('stores', 'Permission')
+    # Permission = MembershipPermission._meta.get_model('stores', 'Permission')
     for code in role_permissions:
         Permission.objects.get_or_create(code=code)
         permission = Permission.objects.get(code=code)
