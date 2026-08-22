@@ -2,6 +2,7 @@ from threading import Barrier, Thread
 
 from django.db import close_old_connections
 from django.test import TestCase, TransactionTestCase
+from django.utils import timezone
 from rest_framework import status
 
 from customers.models import Customer
@@ -115,6 +116,18 @@ class CatalogApiTests(TestCase):
             '/api/v1/catalog/products/?stock_status=unknown'
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_product_ordering_is_whitelisted(self):
+        first = create_product(self.store, name='Zulu')
+        second = create_product(self.store, name='Alpha')
+
+        response = self.client.get('/api/v1/catalog/products/', {'ordering': 'name'})
+        invalid_response = self.client.get('/api/v1/catalog/products/', {'ordering': 'price'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = [item['id'] for item in response.data['results']]
+        self.assertLess(ids.index(second.id), ids.index(first.id))
+        self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_product_cannot_reference_category_from_another_store(self):
         other_store, _ = create_store()
@@ -313,6 +326,35 @@ class WantedApiTests(TestCase):
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertEqual(response.data['count'], 1)
                 self.assertEqual(response.data['results'][0]['id'], matching.id)
+
+    def test_wanted_filters_are_combined_and_validated(self):
+        today = timezone.localdate().isoformat()
+        matching = create_wanted_product(
+            self.store,
+            product=self.product,
+            product_name='Popular Shoe',
+            size='44',
+            wanted_count=5,
+        )
+        create_wanted_product(self.store, wanted_count=1)
+
+        response = self.client.get('/api/v1/wanted/', {
+            'min_count': 5,
+            'product_id': self.product.id,
+            'date_from': today,
+            'date_to': today,
+        })
+        invalid_count = self.client.get('/api/v1/wanted/', {'min_count': 0})
+        invalid_range = self.client.get('/api/v1/wanted/', {
+            'date_from': '2026-08-22',
+            'date_to': '2026-08-21',
+        })
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], matching.id)
+        self.assertEqual(invalid_count.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(invalid_range.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class WantedConcurrencyTests(TransactionTestCase):

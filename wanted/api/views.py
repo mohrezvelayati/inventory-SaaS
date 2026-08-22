@@ -1,7 +1,9 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from django.http import Http404
 from django.db.models import Q
+from datetime import datetime
 
 from wanted.api.serializers import WantedSerializer
 from wanted.models import WantedProduct
@@ -48,7 +50,59 @@ class WantedListCreateView(generics.ListCreateAPIView):
                 Q(size__icontains=search)
             )
 
+        min_count = self._parse_positive_integer(
+            self.request.query_params.get('min_count'),
+            'min_count',
+        )
+        product_id = self._parse_positive_integer(
+            self.request.query_params.get('product_id'),
+            'product_id',
+        )
+        date_from = self._parse_date(
+            self.request.query_params.get('date_from'),
+            'date_from',
+        )
+        date_to = self._parse_date(
+            self.request.query_params.get('date_to'),
+            'date_to',
+        )
+
+        if date_from and date_to and date_from > date_to:
+            raise ValidationError({
+                'date_to': 'date_to must be on or after date_from.'
+            })
+
+        if min_count:
+            wanted_products = wanted_products.filter(wanted_count__gte=min_count)
+        if product_id:
+            wanted_products = wanted_products.filter(product_id=product_id)
+        if date_from:
+            wanted_products = wanted_products.filter(created_at__date__gte=date_from)
+        if date_to:
+            wanted_products = wanted_products.filter(created_at__date__lte=date_to)
+
         return wanted_products.order_by('id')
+
+    @staticmethod
+    def _parse_positive_integer(value, name):
+        if not value:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as error:
+            raise ValidationError({name: 'A valid positive integer is required.'}) from error
+        if parsed <= 0:
+            raise ValidationError({name: 'A valid positive integer is required.'})
+        return parsed
+
+    @staticmethod
+    def _parse_date(value, name):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, '%Y-%m-%d').date()
+        except ValueError as error:
+            raise ValidationError({name: 'Date must use YYYY-MM-DD format.'}) from error
     
 
     def perform_create(self, serializer):

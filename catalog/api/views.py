@@ -109,10 +109,23 @@ class ProductListCreateView(generics.ListCreateAPIView):
                     total_stock__gt=settings.LOW_STOCK_THRESHOLD
                 )
 
+        ordering = self.request.query_params.get('ordering', '')
+        ordering_fields = {
+            '': 'created_at',
+            'created': 'created_at',
+            '-created': '-created_at',
+            'name': 'name',
+            '-name': '-name',
+        }
+        if ordering not in ordering_fields:
+            raise ValidationError({
+                'ordering': 'Invalid ordering. Must be one of: created, -created, name, -name.'
+            })
+
         return (
             products
             .prefetch_related("variants", "category")
-            .order_by("id")
+            .order_by(ordering_fields[ordering])
         )
 
     
