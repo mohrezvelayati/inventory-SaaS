@@ -177,7 +177,10 @@ ProductVariant
 
 ### Frontend
 
-Frontend implementation is still under development.
+The mobile-first React frontend is maintained separately at
+[`mohrezvelayati/inventory-saas-frontend`](https://github.com/mohrezvelayati/inventory-saas-frontend).
+It currently covers authentication, store onboarding, dashboard, catalog,
+inventory, customers, sales checkout, wanted products, and member management.
 
 ### Architecture
 
@@ -272,7 +275,8 @@ Not production-ready yet:
 - Environment-specific settings have not been split.
 - Password reset/change, JWT logout/blacklisting, and rate limiting are missing.
 - CI, production logging, monitoring, backups, and deployment are missing.
-- There is no frontend.
+- The frontend still needs production hardening, complete CRUD detail views,
+  automated UI tests, and deployment configuration.
 
 Do not deploy the current settings with real customer data.
 
@@ -718,7 +722,6 @@ When changing the project:
 
 ## Documentation and Planning
 
-- [`TASKS.md`](TASKS.md): implementation checklist and remaining phases
 - [`TECHNICAL_HANDOVER_AND_REFACTOR_PLAN.md`](TECHNICAL_HANDOVER_AND_REFACTOR_PLAN.md): original technical audit
 
 Treat the current code and passing tests as the behavioral source of truth.
@@ -737,7 +740,7 @@ The recommended next phases are:
 5. Add formatting, linting, and PostgreSQL CI.
 6. Add production logging, security settings, health checks, and indexes based
    on measured query plans.
-7. Build the mobile-first frontend.
+7. Finish frontend detail views, UI tests, and production authentication.
 8. Deploy staging with monitoring, backups, restore, and rollback procedures.
 
 ## AI / Developer Handoff
@@ -745,8 +748,7 @@ The recommended next phases are:
 Before editing code, an AI or new developer should read:
 
 1. This README
-2. `TASKS.md`
-3. The relevant models, serializers, views, services, and tests
+2. The relevant models, serializers, views, services, and tests
 
 Then run:
 
