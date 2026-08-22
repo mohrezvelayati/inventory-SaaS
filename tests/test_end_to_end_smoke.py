@@ -37,7 +37,7 @@ class CoreProductWorkflowSmokeTests(TestCase):
         )
         return register_response.data
 
-    def test_registration_to_checkout_dashboard_and_member_invite(self):
+    def test_registration_to_checkout_dashboard_and_member_invitation(self):
         self.register_and_login('smoke-manager', '09120000001')
 
         store_response = self.client.post(
@@ -186,23 +186,53 @@ class CoreProductWorkflowSmokeTests(TestCase):
         self.assertEqual(wanted_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(wanted_response.data['wanted_count'], 1)
 
+        invitation_response = self.client.post(
+            '/api/v1/stores/invitations/',
+            {
+                'phone_number': '09120000003',
+                'role': 'seller',
+            },
+            format='json',
+        )
+        self.assertEqual(
+            invitation_response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
         employee_client = APIClient()
         employee_response = employee_client.post(
-            '/api/v1/users/register/',
+            (
+                '/api/v1/stores/invitations/'
+                f"{invitation_response.data['token']}/register/"
+            ),
             {
                 'username': 'smoke-seller',
                 'full_name': 'Smoke Seller',
-                'phone_number': '09120000003',
                 'password': 'StrongPass123!',
             },
             format='json',
         )
         self.assertEqual(employee_response.status_code, status.HTTP_201_CREATED)
-
-        invite_response = self.client.post(
-            '/api/v1/stores/members/',
-            {'invite_username': 'smoke-seller', 'role': 'seller'},
-            format='json',
+        employee_client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {employee_response.data['access']}"
         )
-        self.assertEqual(invite_response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(invite_response.data['username'], 'smoke-seller')
+
+        employee_me = employee_client.get('/api/v1/users/me/')
+        self.assertEqual(employee_me.status_code, status.HTTP_200_OK)
+        self.assertEqual(employee_me.data['membership']['role'], 'seller')
+        self.assertEqual(
+            employee_me.data['membership']['store']['name'],
+            'Smoke Store',
+        )
+        self.assertIn(
+            'view_dashboard',
+            employee_me.data['membership']['permissions'],
+        )
+        self.assertEqual(
+            employee_client.get('/api/v1/dashboard/').status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(
+            employee_client.get('/api/v1/stores/members/').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )

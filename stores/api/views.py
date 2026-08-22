@@ -1,16 +1,30 @@
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import generics, status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.utils import extend_schema
+from django.utils import timezone
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 
 from stores.permissions import CanManageMembers
-from stores.models import Store, StoreMembership, Permission, MembershipPermission
+from stores.models import (
+    MembershipPermission,
+    Permission,
+    Store,
+    StoreInvitation,
+    StoreMembership,
+)
 from stores.api.serializers import (
     StoreSerializer,
     MembershipSerializer,
     MembershipRoleUpdateSerializer,
     MembershipPermissionSerializer,
     PermissionSerializer,
+    InvitationRegistrationSerializer,
+    InvitationPreviewSerializer,
+    InvitationTokenSerializer,
+    StoreInvitationSerializer,
     )
 from stores.services import (
     MembershipResolutionError,
@@ -21,6 +35,12 @@ from stores.services import (
     get_current_membership,
     revoke_membership_permission,
     update_store_membership_role,
+    InvitationError,
+    accept_store_invitation,
+    create_store_invitation,
+    get_invitation_by_token,
+    register_with_store_invitation,
+    revoke_store_invitation,
     )
 
 
@@ -197,3 +217,128 @@ class MembershipPermissionDetailView(generics.DestroyAPIView):
             actor_membership=self.get_actor_membership(),
             membership_permission=instance,
         )
+
+
+def invitation_error_response(error):
+    error_status = (
+        status.HTTP_404_NOT_FOUND
+        if error.code == 'invalid'
+        else status.HTTP_400_BAD_REQUEST
+    )
+    return Response(
+        {'detail': error.message, 'code': error.code},
+        status=error_status,
+    )
+
+
+def mask_phone_number(phone_number):
+    if len(phone_number) < 7:
+        return '***'
+    return f'{phone_number[:4]}***{phone_number[-4:]}'
+
+
+class StoreInvitationListCreateView(generics.ListCreateAPIView):
+    serializer_class = StoreInvitationSerializer
+    permission_classes = [IsAuthenticated, CanManageMembers]
+    pagination_class = None
+
+    def get_actor_membership(self):
+        try:
+            return get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found') from error
+
+    def get_queryset(self):
+        membership = self.get_actor_membership()
+        return StoreInvitation.objects.filter(
+            store_id=membership.store_id,
+            status=StoreInvitation.StatusChoices.PENDING,
+            expires_at__gt=timezone.now(),
+        ).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        invitation, raw_token = create_store_invitation(
+            actor_membership=self.get_actor_membership(),
+            phone_number=serializer.validated_data['phone_number'],
+            role=serializer.validated_data['role'],
+        )
+        invitation.token = raw_token
+        serializer.instance = invitation
+
+
+class StoreInvitationDestroyView(generics.DestroyAPIView):
+    serializer_class = StoreInvitationSerializer
+    permission_classes = [IsAuthenticated, CanManageMembers]
+    lookup_url_kwarg = 'invitation_id'
+
+    def get_actor_membership(self):
+        try:
+            return get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found') from error
+
+    def get_queryset(self):
+        membership = self.get_actor_membership()
+        return StoreInvitation.objects.filter(store_id=membership.store_id)
+
+    def perform_destroy(self, instance):
+        revoke_store_invitation(
+            actor_membership=self.get_actor_membership(),
+            invitation=instance,
+        )
+
+
+class StoreInvitationPreviewView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    serializer_class = InvitationPreviewSerializer
+
+    @extend_schema(responses=InvitationPreviewSerializer)
+    def get(self, request, token):
+        try:
+            invitation = get_invitation_by_token(token)
+        except InvitationError as error:
+            return invitation_error_response(error)
+        return Response({
+            'store_name': invitation.store.name,
+            'role': invitation.role,
+            'masked_phone_number': mask_phone_number(invitation.phone_number),
+            'expires_at': invitation.expires_at,
+        })
+
+
+class StoreInvitationRegisterView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    serializer_class = InvitationRegistrationSerializer
+
+    @extend_schema(responses={201: InvitationTokenSerializer})
+    def post(self, request, token):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            user, _ = register_with_store_invitation(
+                token=token,
+                user_data=serializer.validated_data,
+            )
+        except InvitationError as error:
+            return invitation_error_response(error)
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {'access': str(refresh.access_token), 'refresh': str(refresh)},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class StoreInvitationAcceptView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = MembershipSerializer
+
+    @extend_schema(request=None, responses=MembershipSerializer)
+    def post(self, request, token):
+        try:
+            membership = accept_store_invitation(token=token, user=request.user)
+        except InvitationError as error:
+            return invitation_error_response(error)
+        return Response(MembershipSerializer(membership).data)

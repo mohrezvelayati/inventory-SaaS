@@ -1,7 +1,13 @@
 from rest_framework import serializers
 
 from users.models import User
-from stores.models import Store, StoreMembership, Permission, MembershipPermission
+from stores.models import (
+    MembershipPermission,
+    Permission,
+    Store,
+    StoreInvitation,
+    StoreMembership,
+)
 
 
 
@@ -121,3 +127,66 @@ class MembershipPermissionSerializer(serializers.ModelSerializer):
             'permission_name',
             'created_at',
         ]
+
+
+class StoreInvitationSerializer(serializers.ModelSerializer):
+    token = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = StoreInvitation
+        fields = [
+            'id',
+            'phone_number',
+            'role',
+            'status',
+            'expires_at',
+            'created_at',
+            'token',
+        ]
+        read_only_fields = [
+            'id',
+            'status',
+            'expires_at',
+            'created_at',
+            'token',
+        ]
+
+    def validate_phone_number(self, value):
+        value = value.strip()
+        if len(value) != 11 or not value.isdigit():
+            raise serializers.ValidationError('Enter a valid 11-digit phone number.')
+        return value
+
+    def validate_role(self, value):
+        if value not in (
+            StoreMembership.RoleChoices.SELLER,
+            StoreMembership.RoleChoices.ADMIN,
+        ):
+            raise serializers.ValidationError('Only seller and admin can be invited.')
+        return value
+
+
+class InvitationRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    class Meta:
+        model = User
+        fields = ['username', 'full_name', 'password']
+
+
+class InvitationPreviewSerializer(serializers.Serializer):
+    store_name = serializers.CharField(read_only=True)
+    role = serializers.ChoiceField(
+        choices=(
+            (StoreMembership.RoleChoices.SELLER, 'Seller'),
+            (StoreMembership.RoleChoices.ADMIN, 'Admin'),
+        ),
+        read_only=True,
+    )
+    masked_phone_number = serializers.CharField(read_only=True)
+    expires_at = serializers.DateTimeField(read_only=True)
+
+
+class InvitationTokenSerializer(serializers.Serializer):
+    access = serializers.CharField(read_only=True)
+    refresh = serializers.CharField(read_only=True)

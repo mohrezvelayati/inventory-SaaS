@@ -1,9 +1,20 @@
-from django.db import IntegrityError, transaction
-from django.test import TestCase
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
+
+from django.db import IntegrityError, close_old_connections, transaction
+from django.test import TestCase, TransactionTestCase
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from stores.models import Permission, StoreMembership
+from stores.models import (
+    MembershipPermission,
+    Permission,
+    StoreInvitation,
+    StoreMembership,
+)
+from stores.services import InvitationError, accept_store_invitation
 from sales.models import Sale
 from tests.factories import (
     authenticated_client,
@@ -279,6 +290,242 @@ class StoreMembershipTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class StoreInvitationApiTests(TestCase):
+    def setUp(self):
+        self.manager = create_user()
+        self.store, _ = create_store(self.manager)
+        self.client = authenticated_client(self.manager)
+
+    def create_invitation(self, phone_number='09123334444', role='seller'):
+        return self.client.post(
+            '/api/v1/stores/invitations/',
+            {'phone_number': phone_number, 'role': role},
+            format='json',
+        )
+
+    def test_manager_can_create_list_and_revoke_invitation(self):
+        response = self.create_invitation()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('token', response.data)
+        invitation = StoreInvitation.objects.get(pk=response.data['id'])
+        self.assertNotEqual(invitation.token_hash, response.data['token'])
+        self.assertEqual(
+            invitation.token_hash,
+            hashlib.sha256(response.data['token'].encode()).hexdigest(),
+        )
+
+        list_response = self.client.get('/api/v1/stores/invitations/')
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(list_response.data), 1)
+        self.assertNotIn('token', list_response.data[0])
+
+        delete_response = self.client.delete(
+            f'/api/v1/stores/invitations/{invitation.id}/'
+        )
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, StoreInvitation.StatusChoices.REVOKED)
+
+    def test_new_invitation_revokes_previous_pending_invitation(self):
+        first = self.create_invitation()
+        second = self.create_invitation(role='admin')
+
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        first_invitation = StoreInvitation.objects.get(pk=first.data['id'])
+        self.assertEqual(first_invitation.status, StoreInvitation.StatusChoices.REVOKED)
+        self.assertEqual(
+            StoreInvitation.objects.filter(
+                store=self.store,
+                phone_number='09123334444',
+                status=StoreInvitation.StatusChoices.PENDING,
+            ).count(),
+            1,
+        )
+
+    def test_manager_role_cannot_be_invited(self):
+        response = self.create_invitation(role='manager')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(StoreInvitation.objects.exists())
+
+    def test_seller_cannot_manage_invitations(self):
+        seller = create_user()
+        StoreMembership.objects.create(
+            store=self.store,
+            user=seller,
+            role=StoreMembership.RoleChoices.SELLER,
+        )
+        response = authenticated_client(seller).post(
+            '/api/v1/stores/invitations/',
+            {'phone_number': '09123334444', 'role': 'seller'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_preview_masks_phone_and_does_not_reveal_account_state(self):
+        response = self.create_invitation()
+        preview = APIClient().get(
+            f"/api/v1/stores/invitations/preview/{response.data['token']}/"
+        )
+
+        self.assertEqual(preview.status_code, status.HTTP_200_OK)
+        self.assertEqual(preview.data['store_name'], self.store.name)
+        self.assertEqual(preview.data['masked_phone_number'], '0912***4444')
+        self.assertNotIn('account_exists', preview.data)
+
+    def test_new_user_registers_and_receives_tokens_membership_and_permissions(self):
+        response = self.create_invitation(role='seller')
+        token = response.data['token']
+
+        registration = APIClient().post(
+            f'/api/v1/stores/invitations/{token}/register/',
+            {
+                'username': 'invited-seller',
+                'full_name': 'Invited Seller',
+                'password': 'StrongPass123!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(registration.status_code, status.HTTP_201_CREATED)
+        self.assertIn('access', registration.data)
+        self.assertIn('refresh', registration.data)
+        user = User.objects.get(username='invited-seller')
+        membership = StoreMembership.objects.get(user=user)
+        self.assertEqual(user.phone_number, '09123334444')
+        self.assertEqual(membership.store, self.store)
+        self.assertEqual(membership.role, StoreMembership.RoleChoices.SELLER)
+        self.assertEqual(
+            set(
+                MembershipPermission.objects.filter(membership=membership)
+                .values_list('permission__code', flat=True)
+            ),
+            {'create_sale', 'view_sales', 'view_inventory', 'view_dashboard'},
+        )
+        invitation = StoreInvitation.objects.get(pk=response.data['id'])
+        self.assertEqual(invitation.status, StoreInvitation.StatusChoices.ACCEPTED)
+        self.assertEqual(invitation.accepted_by, user)
+
+    def test_existing_user_with_matching_phone_can_accept(self):
+        user = create_user(phone_number='09123334444')
+        response = self.create_invitation(role='admin')
+
+        accepted = authenticated_client(user).post(
+            f"/api/v1/stores/invitations/{response.data['token']}/accept/"
+        )
+
+        self.assertEqual(accepted.status_code, status.HTTP_200_OK)
+        membership = StoreMembership.objects.get(user=user)
+        self.assertEqual(membership.role, StoreMembership.RoleChoices.ADMIN)
+        self.assertEqual(membership.store, self.store)
+
+    def test_phone_mismatch_and_existing_membership_are_rejected(self):
+        mismatch_user = create_user(phone_number='09120000000')
+        response = self.create_invitation()
+        mismatch = authenticated_client(mismatch_user).post(
+            f"/api/v1/stores/invitations/{response.data['token']}/accept/"
+        )
+        self.assertEqual(mismatch.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(mismatch.data['code'], 'phone_mismatch')
+
+        member = create_user(phone_number='09123334444')
+        create_store(member)
+        already_member = authenticated_client(member).post(
+            f"/api/v1/stores/invitations/{response.data['token']}/accept/"
+        )
+        self.assertEqual(already_member.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(already_member.data['code'], 'already_member')
+
+    def test_expired_revoked_used_and_invalid_links_are_rejected(self):
+        expired_response = self.create_invitation(phone_number='09121110000')
+        expired = StoreInvitation.objects.get(pk=expired_response.data['id'])
+        expired.expires_at = timezone.now() - timedelta(seconds=1)
+        expired.save(update_fields=['expires_at'])
+        expired_preview = APIClient().get(
+            f"/api/v1/stores/invitations/preview/{expired_response.data['token']}/"
+        )
+        self.assertEqual(expired_preview.data['code'], 'expired')
+
+        revoked_response = self.create_invitation(phone_number='09122220000')
+        self.client.delete(
+            f"/api/v1/stores/invitations/{revoked_response.data['id']}/"
+        )
+        revoked_preview = APIClient().get(
+            f"/api/v1/stores/invitations/preview/{revoked_response.data['token']}/"
+        )
+        self.assertEqual(revoked_preview.data['code'], 'revoked')
+
+        user = create_user(phone_number='09123330000')
+        used_response = self.create_invitation(phone_number=user.phone_number)
+        authenticated_client(user).post(
+            f"/api/v1/stores/invitations/{used_response.data['token']}/accept/"
+        )
+        used_again = authenticated_client(user).post(
+            f"/api/v1/stores/invitations/{used_response.data['token']}/accept/"
+        )
+        self.assertEqual(used_again.data['code'], 'used')
+
+        invalid = APIClient().get(
+            '/api/v1/stores/invitations/preview/not-a-real-token/'
+        )
+        self.assertEqual(invalid.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(invalid.data['code'], 'invalid')
+
+    def test_invitation_registration_rejects_existing_phone_and_rolls_back(self):
+        create_user(phone_number='09123334444')
+        response = self.create_invitation()
+        registration = APIClient().post(
+            f"/api/v1/stores/invitations/{response.data['token']}/register/",
+            {
+                'username': 'must-not-exist',
+                'full_name': 'Existing Phone',
+                'password': 'StrongPass123!',
+            },
+            format='json',
+        )
+        self.assertEqual(registration.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(registration.data['code'], 'account_exists')
+        self.assertFalse(User.objects.filter(username='must-not-exist').exists())
+
+
+class ConcurrentInvitationAcceptanceTests(TransactionTestCase):
+    reset_sequences = True
+
+    def test_invitation_can_only_be_consumed_once(self):
+        manager = create_user(username='concurrent-manager')
+        store, manager_membership = create_store(manager)
+        user = create_user(
+            username='concurrent-seller',
+            phone_number='09124445555',
+        )
+        response = authenticated_client(manager).post(
+            '/api/v1/stores/invitations/',
+            {'phone_number': user.phone_number, 'role': 'seller'},
+            format='json',
+        )
+        token = response.data['token']
+
+        def accept():
+            close_old_connections()
+            try:
+                thread_user = User.objects.get(pk=user.pk)
+                accept_store_invitation(token=token, user=thread_user)
+                return 'accepted'
+            except InvitationError as error:
+                return error.code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: accept(), range(2)))
+
+        self.assertCountEqual(results, ['accepted', 'used'])
+        self.assertEqual(
+            StoreMembership.objects.filter(store=store, user=user).count(),
+            1,
+        )
 
 
 class CapabilityPermissionTests(TestCase):
