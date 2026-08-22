@@ -52,7 +52,7 @@ class MembershipListCreateView(generics.ListCreateAPIView):
 
         return StoreMembership.objects.filter(
             store=membership.store
-        ).order_by('id')
+        ).select_related('user').order_by('id')
 
     def perform_create(self, serializer):
         try:

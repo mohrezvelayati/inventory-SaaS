@@ -44,6 +44,32 @@ class CatalogApiTests(TestCase):
             [product.id for product in products],
         )
 
+    def test_product_list_returns_variant_details_for_frontend(self):
+        product = create_product(self.store, name='Frontend Product')
+        variant = create_variant(
+            product,
+            size='42',
+            current_stock=7,
+            purchase_price=1000,
+            sale_price=1500,
+        )
+
+        response = self.client.get('/api/v1/catalog/products/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result = response.data['results'][0]
+        self.assertEqual(result['id'], product.id)
+        self.assertEqual(
+            result['variants'],
+            [{
+                'id': variant.id,
+                'size': '42',
+                'purchase_price': '1000',
+                'sale_price': '1500',
+                'current_stock': 7,
+            }],
+        )
+
     def test_stock_filters_classify_products(self):
         products = {}
         for label, stock in [('out', 0), ('low', 1), ('in', 5)]:

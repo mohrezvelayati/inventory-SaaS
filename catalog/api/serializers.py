@@ -37,6 +37,17 @@ class CategorySerializer(serializers.ModelSerializer):
 
         return name
 
+class ProductVariantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductVariant
+        fields = [
+            'id',
+            'size',
+            'purchase_price',
+            'sale_price',
+            'current_stock',
+        ]
+        read_only_fields = ['id', 'current_stock']
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -46,6 +57,7 @@ class ProductSerializer(serializers.ModelSerializer):
         many=True,
         required=False,
     )
+    variants = ProductVariantSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
@@ -77,27 +89,6 @@ class ProductSerializer(serializers.ModelSerializer):
         except MembershipResolutionError:
             return
 
-        self.fields['categories'].queryset = (
+        self.fields['categories'].child_relation.queryset = (
             Category.objects.filter(store_id=membership.store_id)
         )
-
-
-
-class ProductVariantSerializer(serializers.ModelSerializer):
-
-    class Meta:
-        model = ProductVariant
-
-        fields = [
-            'id',
-            'size',
-            'purchase_price',
-            'sale_price',
-            'current_stock',
-        ]
-
-        read_only_fields = [
-            'id',
-            'current_stock',
-        ]
-    

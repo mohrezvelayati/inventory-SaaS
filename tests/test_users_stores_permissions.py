@@ -168,6 +168,28 @@ class StoreMembershipTests(TestCase):
             ).exists()
         )
 
+    def test_manager_can_invite_member_by_username(self):
+        employee = create_user(username='new-seller')
+
+        response = self.client.post(
+            '/api/v1/stores/members/',
+            {
+                'invite_username': employee.username,
+                'role': StoreMembership.RoleChoices.SELLER,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['username'], employee.username)
+        self.assertEqual(response.data['user_full_name'], employee.full_name)
+        self.assertTrue(
+            StoreMembership.objects.filter(
+                store=self.store,
+                user=employee,
+            ).exists()
+        )
+
     def test_non_manager_cannot_manage_members_even_with_capability(self):
         seller = create_user()
         seller_membership = StoreMembership.objects.create(

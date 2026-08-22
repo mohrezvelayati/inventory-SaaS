@@ -23,11 +23,30 @@ class StoreSerializer(serializers.ModelSerializer):
 
 
 class MembershipSerializer(serializers.ModelSerializer):
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    user = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        required=False,
+    )
+    username = serializers.CharField(source='user.username', read_only=True)
+    user_full_name = serializers.CharField(
+        source='user.full_name',
+        read_only=True,
+    )
+    invite_username = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = StoreMembership
-        fields = ['id', 'store', 'user', 'role', 'created_at', 'updated_at']
+        fields = [
+            'id',
+            'store',
+            'user',
+            'username',
+            'user_full_name',
+            'invite_username',
+            'role',
+            'created_at',
+            'updated_at',
+        ]
 
         read_only_fields = ['store', 'created_at', 'updated_at']
 
@@ -38,6 +57,31 @@ class MembershipSerializer(serializers.ModelSerializer):
             )
 
         return user
+
+    def validate(self, attrs):
+        user = attrs.get('user')
+        invite_username = attrs.pop('invite_username', '').strip()
+
+        if user is not None and invite_username:
+            raise serializers.ValidationError({
+                'invite_username': 'Provide user or invite_username, not both.'
+            })
+
+        if user is None:
+            if not invite_username:
+                raise serializers.ValidationError({
+                    'invite_username': 'This field is required.'
+                })
+            try:
+                user = User.objects.get(username=invite_username)
+            except User.DoesNotExist as error:
+                raise serializers.ValidationError({
+                    'invite_username': 'No user exists with this username.'
+                }) from error
+            self.validate_user(user)
+            attrs['user'] = user
+
+        return attrs
 
 
 class MembershipRoleUpdateSerializer(serializers.ModelSerializer):
