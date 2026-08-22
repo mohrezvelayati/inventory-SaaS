@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.http import Http404
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from datetime import datetime
 from rest_framework.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema
@@ -216,6 +217,16 @@ class SaleListView(generics.ListAPIView):
         channel_filter = self.request.query_params.get("channel")
         date_from_value = self.request.query_params.get("date_from")
         date_to_value = self.request.query_params.get("date_to")
+        search = self.request.query_params.get("search", "").strip()
+
+        if search:
+            query = (
+                Q(customer__full_name__icontains=search) |
+                Q(customer__phone_number__icontains=search)
+            )
+            if search.isdigit():
+                query |= Q(id=int(search))
+            sales = sales.filter(query)
 
         if status_filter:
             if status_filter not in Sale.StatusChoices.values:

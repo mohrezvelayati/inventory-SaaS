@@ -1,6 +1,7 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
+from django.db.models import Q
 from datetime import datetime
 from rest_framework.exceptions import ValidationError
 
@@ -53,12 +54,20 @@ class InventoryListView(generics.ListAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        return(
+        inventory = (
             ProductVariant.objects
             .filter(product__store_id=membership.store_id)
             .select_related('product')
-            .order_by('id')
         )
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            inventory = inventory.filter(
+                Q(product__name__icontains=search) |
+                Q(size__icontains=search)
+            )
+
+        return inventory.order_by('id')
 
 
 class InventoryMovementHistoryView(generics.ListAPIView):

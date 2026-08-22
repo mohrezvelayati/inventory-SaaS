@@ -14,6 +14,7 @@ from tests.factories import (
     create_store,
     create_user,
     create_variant,
+    create_wanted_product,
 )
 from users.models import User
 from wanted.models import WantedCustomerRequest, WantedProduct
@@ -212,6 +213,21 @@ class CustomerApiTests(TestCase):
         customer = create_customer(other_store, phone_number=phone)
         self.assertEqual(customer.phone_number, phone)
 
+    def test_customer_search_matches_name_or_phone(self):
+        matching = create_customer(
+            self.store,
+            full_name='Sara Ahmadi',
+            phone_number='09123456789',
+        )
+        create_customer(self.store, full_name='Reza Karimi')
+
+        for search in ['sara', '4567']:
+            with self.subTest(search=search):
+                response = self.client.get('/api/v1/customers/', {'search': search})
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.data['count'], 1)
+                self.assertEqual(response.data['results'][0]['id'], matching.id)
+
 
 class WantedApiTests(TestCase):
     def setUp(self):
@@ -281,6 +297,22 @@ class WantedApiTests(TestCase):
 
         self.assertEqual(product_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(customer_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_wanted_search_matches_name_brand_or_size(self):
+        matching = create_wanted_product(
+            self.store,
+            product_name='Air Zoom',
+            brand='Nike',
+            size='43',
+        )
+        create_wanted_product(self.store, product_name='Classic Shirt')
+
+        for search in ['zoom', 'nike', '43']:
+            with self.subTest(search=search):
+                response = self.client.get('/api/v1/wanted/', {'search': search})
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.data['count'], 1)
+                self.assertEqual(response.data['results'][0]['id'], matching.id)
 
 
 class WantedConcurrencyTests(TransactionTestCase):

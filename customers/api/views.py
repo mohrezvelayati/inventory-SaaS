@@ -1,6 +1,7 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
+from django.db.models import Q
 
 from customers.models import Customer
 from customers.api.serializers import CustomerSerializer
@@ -19,9 +20,18 @@ class CustomerListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        return Customer.objects.filter(
+        customers = Customer.objects.filter(
             store=membership.store
-        ).order_by('id')
+        )
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            customers = customers.filter(
+                Q(full_name__icontains=search) |
+                Q(phone_number__icontains=search)
+            )
+
+        return customers.order_by('id')
 
 
     def perform_create(self, serializer):

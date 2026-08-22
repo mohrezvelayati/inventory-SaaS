@@ -1,6 +1,7 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
+from django.db.models import Q
 
 from wanted.api.serializers import WantedSerializer
 from wanted.models import WantedProduct
@@ -35,9 +36,19 @@ class WantedListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        return WantedProduct.objects.filter(
+        wanted_products = WantedProduct.objects.filter(
             store=membership.store
-        ).order_by('id')
+        )
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            wanted_products = wanted_products.filter(
+                Q(product_name__icontains=search) |
+                Q(brand__icontains=search) |
+                Q(size__icontains=search)
+            )
+
+        return wanted_products.order_by('id')
     
 
     def perform_create(self, serializer):

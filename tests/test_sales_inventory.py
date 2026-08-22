@@ -10,6 +10,7 @@ from sales.models import Sale, SaleItem
 from sales.services import complete_sale
 from tests.factories import (
     authenticated_client,
+    create_customer,
     create_product,
     create_sale,
     create_store,
@@ -270,6 +271,22 @@ class SaleFlowTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], matching.id)
+
+    def test_sale_search_matches_id_customer_name_or_phone(self):
+        customer = create_customer(
+            self.store,
+            full_name='Niloofar Moradi',
+            phone_number='09351234567',
+        )
+        matching = create_sale(self.store, self.membership, customer=customer)
+        create_sale(self.store, self.membership)
+
+        for search in [str(matching.id), 'niloofar', '1234']:
+            with self.subTest(search=search):
+                response = self.client.get('/api/v1/sales/', {'search': search})
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.data['count'], 1)
+                self.assertEqual(response.data['results'][0]['id'], matching.id)
 
 
     def test_update_draft_sale_item_recalculates_totals(self):
@@ -537,6 +554,22 @@ class InventoryApiTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(InventoryMovement.objects.count(), 0)
+
+    def test_inventory_search_matches_product_or_size(self):
+        self.product.name = 'Runner Pro'
+        self.product.save(update_fields=['name'])
+        self.variant.size = '42-Wide'
+        self.variant.save(update_fields=['size'])
+        other_variant = create_variant(create_product(self.store, name='T-Shirt'))
+
+        for search in ['runner', 'wide']:
+            with self.subTest(search=search):
+                response = self.client.get('/api/v1/inventory/', {'search': search})
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.data['count'], 1)
+                self.assertEqual(response.data['results'][0]['id'], self.variant.id)
+
+        self.assertNotEqual(other_variant.id, self.variant.id)
 
     def test_invalid_quantity_rules_are_rejected(self):
         cases = [
