@@ -2,10 +2,12 @@ from rest_framework.exceptions import ValidationError
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.http import Http404
-from django.db.models import Q
+from django.db.models import Count, Sum, Q
+from django.db.models.functions import Coalesce
 
 from customers.models import Customer
 from customers.api.serializers import CustomerSerializer
+from sales.models import Sale
 from stores.services import get_current_membership, MembershipResolutionError
 from customers.permissions import CanManageCustomers
 
@@ -85,7 +87,17 @@ class CustomerListCreateView(generics.ListCreateAPIView):
         if age_max is not None:
             customers = customers.filter(age__lte=age_max)
 
-
+        # Total quantitythis customer bought
+        customers = customers.annotate(
+            total_items_purchased=Coalesce(
+                Sum(
+                    'sales__items__quantity',
+                    filter=Q(sales__status=Sale.StatusChoices.COMPLETED),
+                    distinct=True,
+                ),
+                0,
+            )
+        )
 
 
         return customers.order_by('id')

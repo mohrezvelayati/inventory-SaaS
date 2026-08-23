@@ -15,6 +15,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             'phone_number',
             'gender',
             'age',
+            'total_items_purchased',
             'created_at',
             'updated_at',
         ]
@@ -24,6 +25,11 @@ class CustomerSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at'
         ]
+
+    total_items_purchased = serializers.IntegerField(
+        read_only=True,
+        default=0,
+    )
 
 
     def validate_phone_number(self, phone_number):

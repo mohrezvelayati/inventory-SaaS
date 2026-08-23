@@ -6,12 +6,15 @@ from django.utils import timezone
 from rest_framework import status
 
 from customers.models import Customer
-from stores.models import Store
+from sales.models import Sale, SaleItem
+from stores.models import Store, StoreMembership
 from tests.factories import (
     authenticated_client,
     create_category,
     create_customer,
     create_product,
+    create_sale,
+    create_sale_item,
     create_store,
     create_user,
     create_variant,
@@ -291,6 +294,46 @@ class CustomerApiTests(TestCase):
             {'age_min': 30, 'age_max': 20},
         )
         self.assertEqual(bad_range.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_total_items_purchased_counts_only_completed_sale_quantities(self):
+        customer = create_customer(
+            self.store,
+            full_name='Buyer',
+            phone_number='09333333333',
+            gender='male',
+            age=35,
+        )
+        product = create_product(self.store)
+        variant = create_variant(product, current_stock=10)
+        # Re-fetch the seller membership from the store created in setUp.
+        seller = StoreMembership.objects.get(store=self.store)
+
+        # Two completed sales: quantities 2 and 3 -> total 5.
+        for qty in (2, 3):
+            sale = create_sale(
+                self.store,
+                seller,
+                customer=customer,
+                status=Sale.StatusChoices.COMPLETED,
+            )
+            create_sale_item(sale, variant, quantity=qty)
+
+        # A draft sale must NOT count toward the total.
+        draft = create_sale(
+            self.store,
+            seller,
+            customer=customer,
+            status=Sale.StatusChoices.DRAFT,
+        )
+        create_sale_item(draft, variant, quantity=100)
+
+        response = self.client.get('/api/v1/customers/', {'search': 'Buyer'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(
+            response.data['results'][0]['total_items_purchased'],
+            5,
+        )
 
 
 class WantedApiTests(TestCase):
