@@ -109,6 +109,10 @@ class ProductListCreateView(generics.ListCreateAPIView):
                     total_stock__gt=settings.LOW_STOCK_THRESHOLD
                 )
 
+        size = self.request.query_params.get('size', '').strip()
+        if size:
+            products = products.filter(variants__size__iexact=size)
+
         ordering = self.request.query_params.get('ordering', '')
         ordering_fields = {
             '': 'created_at',

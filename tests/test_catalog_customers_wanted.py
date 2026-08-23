@@ -114,6 +114,28 @@ class CatalogApiTests(TestCase):
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], matching.id)
 
+    def test_product_filter_by_variant_size(self):
+        size_40 = create_product(self.store, name='Sneaker 40')
+        create_variant(size_40, size='40', current_stock=2)
+        size_41 = create_product(self.store, name='Sneaker 41')
+        create_variant(size_41, size='41', current_stock=2)
+        create_product(self.store, name='No Variant')
+
+        response = self.client.get(
+            '/api/v1/catalog/products/',
+            {'size': '40'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], size_40.id)
+
+        empty_response = self.client.get(
+            '/api/v1/catalog/products/',
+            {'size': '99'},
+        )
+        self.assertEqual(empty_response.data['count'], 0)
+
     def test_invalid_stock_status_is_rejected(self):
         response = self.client.get(
             '/api/v1/catalog/products/?stock_status=unknown'
