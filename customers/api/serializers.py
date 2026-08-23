@@ -13,6 +13,8 @@ class CustomerSerializer(serializers.ModelSerializer):
             'id',
             'full_name',
             'phone_number',
+            'gender',
+            'age',
             'created_at',
             'updated_at',
         ]

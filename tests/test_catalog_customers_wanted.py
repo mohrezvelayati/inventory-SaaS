@@ -188,19 +188,28 @@ class CustomerApiTests(TestCase):
     def test_customer_crud(self):
         create_response = self.client.post(
             '/api/v1/customers/',
-            {'full_name': 'Customer', 'phone_number': '09111111111'},
+            {
+                'full_name': 'Customer',
+                'phone_number': '09111111111',
+                'gender': 'male',
+                'age': 30,
+            },
             format='json',
         )
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         customer_id = create_response.data['id']
+        self.assertEqual(create_response.data['gender'], 'male')
+        self.assertEqual(create_response.data['age'], 30)
 
         update_response = self.client.patch(
             f'/api/v1/customers/{customer_id}/',
-            {'full_name': 'Updated Customer'},
+            {'full_name': 'Updated Customer', 'gender': 'female', 'age': 31},
             format='json',
         )
         self.assertEqual(update_response.status_code, status.HTTP_200_OK)
         self.assertEqual(update_response.data['full_name'], 'Updated Customer')
+        self.assertEqual(update_response.data['gender'], 'female')
+        self.assertEqual(update_response.data['age'], 31)
 
         delete_response = self.client.delete(
             f'/api/v1/customers/{customer_id}/'
@@ -214,7 +223,7 @@ class CustomerApiTests(TestCase):
 
         duplicate_response = self.client.post(
             '/api/v1/customers/',
-            {'full_name': 'Duplicate', 'phone_number': phone},
+            {'full_name': 'Duplicate', 'phone_number': phone, 'gender': 'female'},
             format='json',
         )
         self.assertEqual(
@@ -240,6 +249,48 @@ class CustomerApiTests(TestCase):
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertEqual(response.data['count'], 1)
                 self.assertEqual(response.data['results'][0]['id'], matching.id)
+
+    def test_customer_filters_gender_and_age(self):
+        create_customer(self.store, full_name='Ali', gender='male', age=30)
+        create_customer(self.store, full_name='Sara', gender='female', age=30)
+        create_customer(self.store, full_name='Reza', gender='male', age=40)
+        create_customer(self.store, full_name='Nina', gender='female', age=25)
+
+        male = self.client.get('/api/v1/customers/', {'gender': 'male'})
+        self.assertEqual(male.status_code, status.HTTP_200_OK)
+        self.assertEqual(male.data['count'], 2)
+
+        age30 = self.client.get(
+            '/api/v1/customers/',
+            {'age_min': 30, 'age_max': 30},
+        )
+        self.assertEqual(age30.status_code, status.HTTP_200_OK)
+        self.assertEqual(age30.data['count'], 2)
+
+        combined = self.client.get(
+            '/api/v1/customers/',
+            {'gender': 'female', 'age_min': 25, 'age_max': 25},
+        )
+        self.assertEqual(combined.status_code, status.HTTP_200_OK)
+        self.assertEqual(combined.data['count'], 1)
+        self.assertEqual(combined.data['results'][0]['full_name'], 'Nina')
+
+        bad_gender = self.client.get('/api/v1/customers/', {'gender': 'unknown'})
+        self.assertEqual(bad_gender.status_code, status.HTTP_400_BAD_REQUEST)
+
+        open_ended = self.client.get('/api/v1/customers/', {'age_min': 31})
+        self.assertEqual(open_ended.status_code, status.HTTP_200_OK)
+        self.assertEqual(open_ended.data['count'], 1)
+        self.assertEqual(open_ended.data['results'][0]['full_name'], 'Reza')
+
+        bad_age_min = self.client.get('/api/v1/customers/', {'age_min': 'abc'})
+        self.assertEqual(bad_age_min.status_code, status.HTTP_400_BAD_REQUEST)
+
+        bad_range = self.client.get(
+            '/api/v1/customers/',
+            {'age_min': 30, 'age_max': 20},
+        )
+        self.assertEqual(bad_range.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class WantedApiTests(TestCase):

@@ -111,6 +111,8 @@ class CoreProductWorkflowSmokeTests(TestCase):
             {
                 'full_name': 'Smoke Customer',
                 'phone_number': '09120000002',
+                'gender': 'male',
+                'age': 30,
             },
             format='json',
         )

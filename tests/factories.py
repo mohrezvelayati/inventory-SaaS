@@ -95,6 +95,8 @@ def create_customer(store, **overrides):
         store=store,
         full_name=overrides.get('full_name', f'Customer {number}'),
         phone_number=overrides.get('phone_number', f'09{number:09d}'),
+        gender=overrides.get('gender', 'male'),
+        age=overrides.get('age'),
     )
 
 
