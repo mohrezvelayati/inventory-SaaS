@@ -75,6 +75,79 @@ class CatalogApiTests(TestCase):
             }],
         )
 
+    def test_product_can_be_created_without_variants(self):
+        response = self.client.post(
+            '/api/v1/catalog/products/',
+            {
+                'name': 'Jordan 1 Celadon',
+                'description': 'Created before its sizes are known.',
+                'categories': [self.category.id],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['name'], 'Jordan 1 Celadon')
+        self.assertEqual(response.data['variants'], [])
+
+    def test_variant_size_is_trimmed_and_duplicate_is_field_error(self):
+        product = create_product(self.store)
+        first_response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'size': ' 40 ',
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+        duplicate_response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'size': '40',
+                'purchase_price': 1100,
+                'sale_price': 1600,
+            },
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first_response.data['size'], '40')
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('size', duplicate_response.data)
+
+    def test_blank_variant_size_is_field_error(self):
+        product = create_product(self.store)
+
+        response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'size': '   ',
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('size', response.data)
+
+    def test_variant_cannot_be_created_for_another_store_product(self):
+        other_store, _ = create_store()
+        other_product = create_product(other_store)
+
+        response = self.client.post(
+            f'/api/v1/catalog/product/{other_product.id}/variants/',
+            {
+                'size': '40',
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_stock_filters_classify_products(self):
         products = {}
         for label, stock in [('out', 0), ('low', 1), ('in', 5)]:

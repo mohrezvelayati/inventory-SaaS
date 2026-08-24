@@ -1,5 +1,10 @@
+from django.db import IntegrityError, transaction
+from rest_framework.exceptions import ValidationError
+
 from catalog.models import Category, Product, ProductVariant
 
+
+VARIANT_SIZE_DUPLICATE_ERROR = "A variant with this size already exists."
 
 
 def create_category(*, store, name):
@@ -19,29 +24,19 @@ def create_product(*, store, name, description, categories):
     return product
 
 
-
-def create_product_variant(*, product, size, purchase_price, sale_price, current_stock):
-    """
-    Create a new product variant for a product.
-    """
-    variant = ProductVariant.objects.create(
-        product=product,
-        size=size,
-        purchase_price=purchase_price,
-        sale_price=sale_price,
-        current_stock=current_stock
-    )
-    return variant
-
-
-
 def create_variant(*, product, size, purchase_price, sale_price):
-    return ProductVariant.objects.create(
-        product=product,
-        size=size,
-        purchase_price=purchase_price,
-        sale_price=sale_price
-    )
+    try:
+        with transaction.atomic():
+            return ProductVariant.objects.create(
+                product=product,
+                size=size,
+                purchase_price=purchase_price,
+                sale_price=sale_price
+            )
+    except IntegrityError as error:
+        raise ValidationError({
+            'size': VARIANT_SIZE_DUPLICATE_ERROR,
+        }) from error
 
 
 def update_product(*, product, name, description, categories):
@@ -57,6 +52,18 @@ def update_variant(*, variant, size, purchase_price, sale_price):
     variant.size = size
     variant.purchase_price = purchase_price
     variant.sale_price = sale_price
-    variant.save(update_fields=['size', 'purchase_price', 'sale_price', 'updated_at'])
+    try:
+        with transaction.atomic():
+            variant.save(
+                update_fields=[
+                    'size',
+                    'purchase_price',
+                    'sale_price',
+                    'updated_at',
+                ]
+            )
+    except IntegrityError as error:
+        raise ValidationError({
+            'size': VARIANT_SIZE_DUPLICATE_ERROR,
+        }) from error
     return variant
-
