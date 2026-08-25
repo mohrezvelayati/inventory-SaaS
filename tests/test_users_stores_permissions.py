@@ -25,7 +25,9 @@ from tests.factories import (
     create_variant,
     grant_permission,
 )
-from users.models import User
+from users.models import PasswordResetChallenge, User
+from users.services import PasswordResetError, confirm_password_reset, request_password_reset
+from users.sms import fake_outbox
 
 
 class UserApiTests(TestCase):
@@ -47,6 +49,222 @@ class UserApiTests(TestCase):
         user = User.objects.get(username='new-user')
         self.assertTrue(user.check_password('StrongPass123!'))
         self.assertNotIn('password', response.data)
+
+    def test_registration_rejects_weak_password(self):
+        response = APIClient().post(
+            '/api/v1/users/register/',
+            {
+                'username': 'weak-user',
+                'full_name': 'Weak User',
+                'phone_number': '09123456780',
+                'password': '12345678',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(User.objects.filter(username='weak-user').exists())
+
+    def test_logout_is_idempotent_and_blacklists_refresh_token(self):
+        user = create_user(username='logout-user')
+        login = APIClient().post(
+            '/api/v1/auth/login/',
+            {'username': user.username, 'password': 'StrongPass123!'},
+            format='json',
+        )
+        client = authenticated_client(user)
+
+        first = client.post(
+            '/api/v1/auth/logout/',
+            {'refresh': login.data['refresh']},
+            format='json',
+        )
+        second = client.post(
+            '/api/v1/auth/logout/',
+            {'refresh': login.data['refresh']},
+            format='json',
+        )
+        refresh = APIClient().post(
+            '/api/v1/auth/token/refresh/',
+            {'refresh': login.data['refresh']},
+            format='json',
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(second.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(refresh.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_authenticated_user_can_change_password_and_revoke_old_tokens(self):
+        user = create_user(username='change-password-user')
+        login = APIClient().post(
+            '/api/v1/auth/login/',
+            {'username': user.username, 'password': 'StrongPass123!'},
+            format='json',
+        )
+
+        response = authenticated_client(user).post(
+            '/api/v1/auth/password/change/',
+            {
+                'current_password': 'StrongPass123!',
+                'new_password': 'NewStrongPass456!',
+            },
+            format='json',
+        )
+        refresh = APIClient().post(
+            '/api/v1/auth/token/refresh/',
+            {'refresh': login.data['refresh']},
+            format='json',
+        )
+
+        user.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(user.check_password('NewStrongPass456!'))
+        self.assertEqual(refresh.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class PasswordResetApiTests(TestCase):
+    def setUp(self):
+        fake_outbox.clear()
+        self.user = create_user(
+            username='reset-user',
+            phone_number='09121112222',
+        )
+
+    def request_reset(self, phone_number=None, ip='203.0.113.10'):
+        return APIClient().post(
+            '/api/v1/auth/password-reset/request/',
+            {'phone_number': phone_number or self.user.phone_number},
+            format='json',
+            REMOTE_ADDR=ip,
+        )
+
+    def test_request_does_not_reveal_account_existence_or_store_raw_otp(self):
+        existing = self.request_reset(ip='203.0.113.11')
+        unknown = self.request_reset('09129999999', ip='203.0.113.12')
+
+        self.assertEqual(existing.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(unknown.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(existing.data, unknown.data)
+        self.assertEqual(len(fake_outbox), 1)
+        challenge = PasswordResetChallenge.objects.get(user=self.user)
+        self.assertNotEqual(challenge.code_hash, fake_outbox[0]['code'])
+        self.assertNotIn(self.user.phone_number, challenge.phone_hash)
+
+    def test_valid_code_resets_password_and_is_single_use(self):
+        self.request_reset(ip='203.0.113.13')
+        code = fake_outbox[-1]['code']
+
+        response = APIClient().post(
+            '/api/v1/auth/password-reset/confirm/',
+            {
+                'phone_number': self.user.phone_number,
+                'code': code,
+                'new_password': 'ResetStrongPass456!',
+            },
+            format='json',
+            REMOTE_ADDR='203.0.113.13',
+        )
+        replay = APIClient().post(
+            '/api/v1/auth/password-reset/confirm/',
+            {
+                'phone_number': self.user.phone_number,
+                'code': code,
+                'new_password': 'AnotherStrongPass789!',
+            },
+            format='json',
+            REMOTE_ADDR='203.0.113.14',
+        )
+
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(self.user.check_password('ResetStrongPass456!'))
+        self.assertEqual(replay.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(replay.data['code'], 'invalid_or_expired')
+
+    def test_fifth_wrong_attempt_locks_challenge(self):
+        self.request_reset(ip='203.0.113.15')
+
+        responses = [
+            APIClient().post(
+                '/api/v1/auth/password-reset/confirm/',
+                {
+                    'phone_number': self.user.phone_number,
+                    'code': '000000',
+                    'new_password': 'ResetStrongPass456!',
+                },
+                format='json',
+                REMOTE_ADDR=f'203.0.113.{20 + index}',
+            )
+            for index in range(5)
+        ]
+
+        self.assertEqual(responses[-1].status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(responses[-1].data['code'], 'too_many_attempts')
+        challenge = PasswordResetChallenge.objects.get(user=self.user)
+        self.assertEqual(challenge.attempts, 5)
+
+    def test_expired_code_is_rejected(self):
+        self.request_reset(ip='203.0.113.16')
+        code = fake_outbox[-1]['code']
+        PasswordResetChallenge.objects.filter(user=self.user).update(
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        response = APIClient().post(
+            '/api/v1/auth/password-reset/confirm/',
+            {
+                'phone_number': self.user.phone_number,
+                'code': code,
+                'new_password': 'ResetStrongPass456!',
+            },
+            format='json',
+            REMOTE_ADDR='203.0.113.16',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['code'], 'invalid_or_expired')
+
+    def test_rate_limit_is_persisted_per_phone(self):
+        responses = [
+            self.request_reset(ip=f'203.0.114.{index}')
+            for index in range(6)
+        ]
+
+        self.assertEqual(responses[-1].status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertEqual(responses[-1]['Retry-After'], '3600')
+
+
+class ConcurrentPasswordResetTests(TransactionTestCase):
+    reset_sequences = True
+
+    def test_code_can_only_be_consumed_once_under_concurrency(self):
+        user = create_user(
+            username='concurrent-reset-user',
+            phone_number='09123330000',
+        )
+        fake_outbox.clear()
+        request_password_reset(phone_number=user.phone_number, requester_ip='203.0.115.1')
+        code = fake_outbox[-1]['code']
+
+        def confirm():
+            close_old_connections()
+            try:
+                confirm_password_reset(
+                    phone_number=user.phone_number,
+                    code=code,
+                    new_password='ConcurrentStrongPass456!',
+                )
+                return 'success'
+            except PasswordResetError as error:
+                return error.code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: confirm(), range(2)))
+
+        self.assertEqual(results.count('success'), 1)
+        self.assertEqual(results.count('invalid_or_expired'), 1)
 
     def test_me_requires_authentication(self):
         response = APIClient().get('/api/v1/users/me/')

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
+from django.contrib.auth.password_validation import validate_password
 
 from stores.models import Permission, StoreMembership
 from stores.services import NoMembershipError, get_current_membership
@@ -15,6 +16,10 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
         return user
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
 
 
 class CurrentStoreSerializer(serializers.Serializer):
@@ -78,3 +83,22 @@ class UserSerializer(serializers.ModelSerializer):
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
+
+
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField(write_only=True)
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    phone_number = serializers.RegexField(r"^09\d{9}$")
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    phone_number = serializers.RegexField(r"^09\d{9}$")
+    code = serializers.RegexField(r"^\d{6}$", write_only=True)
+    new_password = serializers.CharField(write_only=True)

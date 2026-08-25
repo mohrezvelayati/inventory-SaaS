@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
 
 from users.models import User
 from stores.models import (
@@ -172,6 +173,10 @@ class InvitationRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'full_name', 'password']
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
 
 
 class InvitationPreviewSerializer(serializers.Serializer):
