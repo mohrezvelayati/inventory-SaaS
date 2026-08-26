@@ -1,6 +1,7 @@
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema
 from django.utils import timezone
@@ -292,6 +293,8 @@ class StoreInvitationPreviewView(generics.GenericAPIView):
     permission_classes = [AllowAny]
     authentication_classes = []
     serializer_class = InvitationPreviewSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'invitation_preview'
 
     @extend_schema(responses=InvitationPreviewSerializer)
     def get(self, request, token):
@@ -311,6 +314,8 @@ class StoreInvitationRegisterView(generics.GenericAPIView):
     permission_classes = [AllowAny]
     authentication_classes = []
     serializer_class = InvitationRegistrationSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'invitation_accept'
 
     @extend_schema(responses={201: InvitationTokenSerializer})
     def post(self, request, token):
@@ -334,6 +339,8 @@ class StoreInvitationRegisterView(generics.GenericAPIView):
 class StoreInvitationAcceptView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = MembershipSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'invitation_accept'
 
     @extend_schema(request=None, responses=MembershipSerializer)
     def post(self, request, token):

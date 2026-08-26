@@ -6,12 +6,15 @@ from django.utils import timezone
 from rest_framework import status
 
 from customers.models import Customer
-from stores.models import Store
+from sales.models import Sale, SaleItem
+from stores.models import Store, StoreMembership
 from tests.factories import (
     authenticated_client,
     create_category,
     create_customer,
     create_product,
+    create_sale,
+    create_sale_item,
     create_store,
     create_user,
     create_variant,
@@ -72,6 +75,79 @@ class CatalogApiTests(TestCase):
             }],
         )
 
+    def test_product_can_be_created_without_variants(self):
+        response = self.client.post(
+            '/api/v1/catalog/products/',
+            {
+                'name': 'Jordan 1 Celadon',
+                'description': 'Created before its sizes are known.',
+                'categories': [self.category.id],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['name'], 'Jordan 1 Celadon')
+        self.assertEqual(response.data['variants'], [])
+
+    def test_variant_size_is_trimmed_and_duplicate_is_field_error(self):
+        product = create_product(self.store)
+        first_response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'size': ' 40 ',
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+        duplicate_response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'size': '40',
+                'purchase_price': 1100,
+                'sale_price': 1600,
+            },
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first_response.data['size'], '40')
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('size', duplicate_response.data)
+
+    def test_blank_variant_size_is_field_error(self):
+        product = create_product(self.store)
+
+        response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'size': '   ',
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('size', response.data)
+
+    def test_variant_cannot_be_created_for_another_store_product(self):
+        other_store, _ = create_store()
+        other_product = create_product(other_store)
+
+        response = self.client.post(
+            f'/api/v1/catalog/product/{other_product.id}/variants/',
+            {
+                'size': '40',
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_stock_filters_classify_products(self):
         products = {}
         for label, stock in [('out', 0), ('low', 1), ('in', 5)]:
@@ -110,6 +186,28 @@ class CatalogApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], matching.id)
+
+    def test_product_filter_by_variant_size(self):
+        size_40 = create_product(self.store, name='Sneaker 40')
+        create_variant(size_40, size='40', current_stock=2)
+        size_41 = create_product(self.store, name='Sneaker 41')
+        create_variant(size_41, size='41', current_stock=2)
+        create_product(self.store, name='No Variant')
+
+        response = self.client.get(
+            '/api/v1/catalog/products/',
+            {'size': '40'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], size_40.id)
+
+        empty_response = self.client.get(
+            '/api/v1/catalog/products/',
+            {'size': '99'},
+        )
+        self.assertEqual(empty_response.data['count'], 0)
 
     def test_invalid_stock_status_is_rejected(self):
         response = self.client.get(
@@ -291,6 +389,46 @@ class CustomerApiTests(TestCase):
             {'age_min': 30, 'age_max': 20},
         )
         self.assertEqual(bad_range.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_total_items_purchased_counts_only_completed_sale_quantities(self):
+        customer = create_customer(
+            self.store,
+            full_name='Buyer',
+            phone_number='09333333333',
+            gender='male',
+            age=35,
+        )
+        product = create_product(self.store)
+        variant = create_variant(product, current_stock=10)
+        # Re-fetch the seller membership from the store created in setUp.
+        seller = StoreMembership.objects.get(store=self.store)
+
+        # Two completed sales: quantities 2 and 3 -> total 5.
+        for qty in (2, 3):
+            sale = create_sale(
+                self.store,
+                seller,
+                customer=customer,
+                status=Sale.StatusChoices.COMPLETED,
+            )
+            create_sale_item(sale, variant, quantity=qty)
+
+        # A draft sale must NOT count toward the total.
+        draft = create_sale(
+            self.store,
+            seller,
+            customer=customer,
+            status=Sale.StatusChoices.DRAFT,
+        )
+        create_sale_item(draft, variant, quantity=100)
+
+        response = self.client.get('/api/v1/customers/', {'search': 'Buyer'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(
+            response.data['results'][0]['total_items_purchased'],
+            5,
+        )
 
 
 class WantedApiTests(TestCase):

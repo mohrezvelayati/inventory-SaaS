@@ -49,6 +49,12 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'current_stock']
 
+    def validate_size(self, value):
+        size = value.strip()
+        if not size:
+            raise serializers.ValidationError("Size cannot be blank.")
+        return size
+
 
 class ProductSerializer(serializers.ModelSerializer):
     categories = serializers.PrimaryKeyRelatedField(

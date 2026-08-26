@@ -40,6 +40,10 @@ class StoreMembership(models.Model):
 
 
 class StoreInvitation(models.Model):
+    class RoleChoices(models.TextChoices):
+        SELLER = StoreMembership.RoleChoices.SELLER, 'Seller'
+        ADMIN = StoreMembership.RoleChoices.ADMIN, 'Admin'
+
     class StatusChoices(models.TextChoices):
         PENDING = 'pending', 'Pending'
         ACCEPTED = 'accepted', 'Accepted'
@@ -58,10 +62,7 @@ class StoreInvitation(models.Model):
     phone_number = models.CharField(max_length=11)
     role = models.CharField(
         max_length=20,
-        choices=(
-            (StoreMembership.RoleChoices.SELLER, 'Seller'),
-            (StoreMembership.RoleChoices.ADMIN, 'Admin'),
-        ),
+        choices=RoleChoices.choices,
     )
     token_hash = models.CharField(max_length=64, unique=True)
     status = models.CharField(
