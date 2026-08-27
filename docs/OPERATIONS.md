@@ -27,8 +27,8 @@ Do not treat a backup as valid until it has been restored.
 ## Rollback
 
 1. Stop new releases and capture the failing deploy SHA and logs.
-2. If code-only, use Render rollback and Vercel instant rollback to the previous
-   known-good SHA, then rerun health and smoke checks.
+2. If code-only, roll back both the Render web service and Static Site to their
+   previous known-good SHAs, then rerun health and smoke checks.
 3. Database migrations must use expand/contract changes. Do not reverse a
    destructive migration during an incident without a verified backup.
 4. If data is corrupt, place the service in maintenance mode, restore to a new
@@ -40,8 +40,9 @@ Do not treat a backup as valid until it has been restored.
 - Rotate immediately after suspected exposure and on ownership changes.
 - `SECRET_KEY` rotation invalidates signed Django data and JWTs; schedule it and
   notify users that they must sign in again.
-- Rotate database, Sentry, and Kavenegar credentials independently; update
-  Render/Vercel secrets, redeploy, verify, then revoke the old value.
+- Rotate database, Sentry, and Kavenegar credentials independently; update the
+  relevant Render environment variables, redeploy, verify, then revoke the old
+  value.
 - Never paste secret values into issues, commits, screenshots, or logs.
 
 ## Incident response
