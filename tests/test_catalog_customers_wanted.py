@@ -1,3 +1,4 @@
+from decimal import Decimal
 from threading import Barrier, Thread
 
 from django.db import close_old_connections
@@ -6,7 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 
 from customers.models import Customer
-from sales.models import Sale, SaleItem
+from sales.models import Sale
 from stores.models import Store, StoreMembership
 from tests.factories import (
     authenticated_client,
@@ -275,6 +276,159 @@ class CatalogApiTests(TestCase):
         ids = [item['id'] for item in response.data['results']]
         self.assertIn(own_variant.id, ids)
         self.assertNotIn(other_variant.id, ids)
+
+    def test_all_variant_sale_prices_can_be_updated_without_changing_old_sales(self):
+        product = create_product(
+            self.store,
+            name='Jordan 1 Celadon',
+        )
+        size_40 = create_variant(
+            product,
+            size='40',
+            purchase_price=3000000,
+            sale_price=5000000,
+        )
+        size_41 = create_variant(
+            product,
+            size='41',
+            purchase_price=3200000,
+            sale_price=5200000,
+        )
+
+        membership = self.user.memberships.get()
+        completed_sale = create_sale(
+            self.store,
+            membership,
+            status=Sale.StatusChoices.COMPLETED,
+            total_amount=5000000,
+        )
+        old_sale_item = create_sale_item(
+            completed_sale,
+            size_40,
+            unit_price=Decimal('5000000'),
+            final_price=Decimal('5000000'),
+        )
+
+        response = self.client.patch(
+            f'/api/v1/catalog/products/{product.id}/prices/',
+            {'sale_price': 5800000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        size_40.refresh_from_db()
+        size_41.refresh_from_db()
+        old_sale_item.refresh_from_db()
+
+        self.assertEqual(size_40.sale_price, Decimal('5800000'))
+        self.assertEqual(size_41.sale_price, Decimal('5800000'))
+
+        self.assertEqual(size_40.purchase_price, Decimal('3000000'))
+        self.assertEqual(size_41.purchase_price, Decimal('3200000'))
+
+        self.assertEqual(
+            old_sale_item.unit_price,
+            Decimal('5000000'),
+        )
+        self.assertEqual(
+            old_sale_item.final_price,
+            Decimal('5000000'),
+        )
+
+    def test_product_sale_price_cannot_be_updated_from_another_store(self):
+        other_store, _ = create_store()
+        other_product = create_product(other_store)
+        other_variant = create_variant(
+            other_product,
+            sale_price=5000000,
+        )
+
+        response = self.client.patch(
+            f'/api/v1/catalog/products/{other_product.id}/prices/',
+            {'sale_price': 5800000},
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        other_variant.refresh_from_db()
+        self.assertEqual(
+            other_variant.sale_price,
+            Decimal('5000000'),
+        )
+
+    def test_product_sale_price_requires_manage_catalog_permission(self):
+        seller = create_user()
+        store, _ = create_store(
+            seller,
+            role=StoreMembership.RoleChoices.SELLER,
+        )
+        product = create_product(store)
+        variant = create_variant(
+            product,
+            sale_price=5000000,
+        )
+        seller_client = authenticated_client(seller)
+
+        response = seller_client.patch(
+            f'/api/v1/catalog/products/{product.id}/prices/',
+            {'sale_price': 5800000},
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        variant.refresh_from_db()
+        self.assertEqual(
+            variant.sale_price,
+            Decimal('5000000'),
+        )
+
+    def test_product_without_variants_cannot_have_bulk_sale_price_updated(self):
+        product = create_product(self.store)
+
+        response = self.client.patch(
+            f'/api/v1/catalog/products/{product.id}/prices/',
+            {'sale_price': 5800000},
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertIn('sale_price', response.data)
+
+    def test_product_sale_price_cannot_be_negative(self):
+        product = create_product(self.store)
+        variant = create_variant(
+            product,
+            sale_price=5000000,
+        )
+
+        response = self.client.patch(
+            f'/api/v1/catalog/products/{product.id}/prices/',
+            {'sale_price': -1},
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        variant.refresh_from_db()
+        self.assertEqual(
+            variant.sale_price,
+            Decimal('5000000'),
+        )
 
 
 class CustomerApiTests(TestCase):

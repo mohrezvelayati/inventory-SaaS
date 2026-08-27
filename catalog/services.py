@@ -1,5 +1,6 @@
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import ValidationError
+from django.utils import timezone
 
 from catalog.models import Category, Product, ProductVariant
 
@@ -45,6 +46,20 @@ def update_product(*, product, name, description, categories):
     product.save(update_fields=['name', 'description', 'updated_at'])
     if categories is not None:
         product.category.set(categories)
+    return product
+
+
+def update_product_sale_price(*, product, sale_price):
+    updated_count = product.variants.update(
+        sale_price=sale_price,
+        updated_at=timezone.now(),
+    )
+
+    if updated_count == 0:
+        raise ValidationError({
+            'sale_price': 'Product has no variants.'
+        })
+
     return product
 
 

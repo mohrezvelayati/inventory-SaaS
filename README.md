@@ -28,7 +28,8 @@ maintained separately in
 - Manager, seller, and admin roles with capability permissions
 - Secure phone-bound employee invitations
 - Store, profile, member, role, and capability management
-- Category, product, size-variant, price, search, filtering, and ordering APIs
+- Catalog APIs for categories, products, size variants, individual pricing,
+  bulk sale-price updates, search, filtering, and ordering
 - Cached stock balances backed by an inventory movement audit trail
 - Draft sales, editable line items, atomic checkout, and cancellation
 - Tenant-scoped customer management and search/filter by gender and age

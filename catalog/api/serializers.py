@@ -98,3 +98,11 @@ class ProductSerializer(serializers.ModelSerializer):
         self.fields['categories'].child_relation.queryset = (
             Category.objects.filter(store_id=membership.store_id)
         )
+
+
+class ProductSalePriceUpdateSerializer(serializers.Serializer):
+    sale_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        min_value=0,
+    )

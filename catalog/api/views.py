@@ -6,11 +6,25 @@ from django.db.models import BigIntegerField, Sum, Value
 from django.db.models.functions import Coalesce
 from rest_framework.exceptions import ValidationError
 from django.conf import settings
+from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 
 from catalog.permissions import CanManageCatalog
 from catalog.models import Category, Product, ProductVariant
-from catalog.api.serializers import CategorySerializer, ProductSerializer, ProductVariantSerializer
-from catalog.services import create_category, create_product, create_variant, update_product, update_variant
+from catalog.api.serializers import (
+    CategorySerializer,
+    ProductSerializer,
+    ProductVariantSerializer,
+    ProductSalePriceUpdateSerializer,
+)
+from catalog.services import (
+    create_category,
+    create_product,
+    create_variant,
+    update_product,
+    update_product_sale_price,
+    update_variant,
+)
 from stores.services import get_current_membership, MembershipResolutionError
 
 
@@ -177,6 +191,41 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
             categories=categories,
         )
         serializer.instance = product
+
+
+class ProductSalePriceUpdateView(generics.GenericAPIView):
+    serializer_class = ProductSalePriceUpdateSerializer
+    permission_classes = [IsAuthenticated, CanManageCatalog]
+    lookup_url_kwarg = 'product_id'
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store not found.') from error
+
+        return Product.objects.filter(
+            store_id=membership.store_id
+        )
+
+    @extend_schema(responses=ProductSerializer)
+    def patch(self, request, *args, **kwargs):
+        product = self.get_object()
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        update_product_sale_price(
+            product=product,
+            sale_price=serializer.validated_data['sale_price'],
+        )
+
+        response_serializer = ProductSerializer(
+            product,
+            context=self.get_serializer_context(),
+        )
+
+        return Response(response_serializer.data)
 
 
 class ProductVariantCreateView(generics.CreateAPIView):
