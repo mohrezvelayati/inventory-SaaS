@@ -23,7 +23,8 @@ maintained separately in
 
 ## What the MVP Does
 
-- JWT registration, login, refresh, and current-user context
+- JWT registration, login, refresh, logout, and current-user context
+- Password change, token revocation, and optional SMS OTP password recovery
 - One-store-per-user tenant isolation
 - Manager, seller, and admin roles with capability permissions
 - Secure phone-bound employee invitations
@@ -224,17 +225,18 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-08-26 with Python 3.12 and Django 5.2:
+Verified on 2026-08-29 with Python 3.12 and Django 5.2:
 
-- 115 Django tests passed against PostgreSQL
+- 120 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors
 
-The test suite covers authentication, profile/store settings, invitations,
-roles/capabilities, tenant isolation, catalog filters, customer/Wanted flows,
-inventory invariants, concurrent checkout, concurrent demand increments,
-sales lifecycle, dashboard/report correctness, schema paths, and the complete
+The test suite covers authentication and password recovery, profile/store
+settings, invitations, roles/capabilities, tenant isolation, catalog filters
+and bulk pricing, customer/Wanted flows, inventory invariants, concurrent
+checkout, concurrent demand increments, sales lifecycle, dashboard/report
+correctness, schema paths, and the complete
 owner-registration-to-employee-invitation smoke workflow.
 
 ## Deployment and Operations
