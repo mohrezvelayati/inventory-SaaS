@@ -32,6 +32,7 @@ maintained separately in
 - Catalog APIs for categories, products, size variants, individual pricing,
   bulk sale-price updates, search, filtering, and ordering
 - Cached stock balances backed by an inventory movement audit trail
+- Atomic batch purchase entry across existing and new product sizes
 - Draft sales, editable line items, atomic checkout, and cancellation
 - Tenant-scoped customer management and search/filter by gender and age
 - Wanted-product demand aggregation and request auditing
@@ -113,6 +114,10 @@ API View -> Serializer validation -> Service -> Model / PostgreSQL
 - Purchase quantities are positive.
 - Adjustments are non-zero and may be positive or negative.
 - Sale movements are negative and can only be created by checkout.
+- Batch purchase entry creates missing sizes when prices are supplied and
+  records every size quantity through the normal movement audit trail.
+- A batch is atomic: if any item is invalid, no size, stock, or movement from
+  that request is persisted.
 - The resulting stock may never become negative.
 
 ### Sales
@@ -225,18 +230,18 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-08-29 with Python 3.12 and Django 5.2:
+Verified on 2026-08-31 with Python 3.12 and Django 5.2:
 
-- 120 Django tests passed against PostgreSQL
+- 126 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors
 
 The test suite covers authentication and password recovery, profile/store
 settings, invitations, roles/capabilities, tenant isolation, catalog filters
-and bulk pricing, customer/Wanted flows, inventory invariants, concurrent
-checkout, concurrent demand increments, sales lifecycle, dashboard/report
-correctness, schema paths, and the complete
+and bulk pricing, customer/Wanted flows, inventory invariants, concurrent batch
+purchases and checkout, concurrent demand increments, sales lifecycle,
+dashboard/report correctness, schema paths, and the complete
 owner-registration-to-employee-invitation smoke workflow.
 
 ## Deployment and Operations

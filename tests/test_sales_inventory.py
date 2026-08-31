@@ -5,9 +5,12 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 
+from catalog.models import ProductVariant
 from inventory.models import InventoryMovement
+from inventory.services import create_batch_purchase
 from sales.models import Sale, SaleItem
 from sales.services import complete_sale
+from stores.models import StoreMembership
 from tests.factories import (
     authenticated_client,
     create_customer,
@@ -16,6 +19,7 @@ from tests.factories import (
     create_store,
     create_user,
     create_variant,
+    grant_permission,
 )
 from users.models import User
 
@@ -516,6 +520,159 @@ class InventoryApiTests(TestCase):
         self.product = create_product(self.store)
         self.variant = create_variant(self.product, current_stock=1)
 
+    def test_batch_purchase_updates_existing_and_creates_new_size(self):
+        original_purchase_price = self.variant.purchase_price
+        original_sale_price = self.variant.sale_price
+
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': self.product.id,
+                'purchase_price': 4000000,
+                'sale_price': 5800000,
+                'note': 'New shipment',
+                'items': [
+                    {'size': self.variant.size, 'quantity': 2},
+                    {'size': '42', 'quantity': 3},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['product'], self.product.id)
+        self.assertEqual(len(response.data['items']), 2)
+
+        self.variant.refresh_from_db()
+        new_variant = ProductVariant.objects.get(
+            product=self.product,
+            size='42',
+        )
+        self.assertEqual(self.variant.current_stock, 3)
+        self.assertEqual(self.variant.purchase_price, original_purchase_price)
+        self.assertEqual(self.variant.sale_price, original_sale_price)
+        self.assertEqual(new_variant.current_stock, 3)
+        self.assertEqual(new_variant.purchase_price, 4000000)
+        self.assertEqual(new_variant.sale_price, 5800000)
+        self.assertEqual(InventoryMovement.objects.count(), 2)
+        self.assertEqual(
+            set(InventoryMovement.objects.values_list('note', flat=True)),
+            {'New shipment'},
+        )
+
+    def test_batch_purchase_is_atomic_when_new_size_has_no_prices(self):
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': self.product.id,
+                'items': [
+                    {'size': self.variant.size, 'quantity': 2},
+                    {'size': '42', 'quantity': 3},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.variant.refresh_from_db()
+        self.assertEqual(self.variant.current_stock, 1)
+        self.assertFalse(
+            ProductVariant.objects.filter(
+                product=self.product,
+                size='42',
+            ).exists()
+        )
+        self.assertEqual(InventoryMovement.objects.count(), 0)
+
+    def test_batch_purchase_rejects_duplicate_sizes(self):
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': self.product.id,
+                'items': [
+                    {'size': ' 42 ', 'quantity': 1},
+                    {'size': '42', 'quantity': 1},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('items', response.data)
+        self.assertEqual(InventoryMovement.objects.count(), 0)
+
+    def test_batch_purchase_hides_cross_store_product(self):
+        other_user = create_user()
+        other_store, _ = create_store(other_user)
+        other_product = create_product(other_store)
+
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': other_product.id,
+                'purchase_price': 100,
+                'sale_price': 200,
+                'items': [{'size': '42', 'quantity': 1}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(InventoryMovement.objects.count(), 0)
+
+    def test_batch_purchase_requires_catalog_and_inventory_permissions(self):
+        for granted_code in ['manage_inventory', 'manage_catalog']:
+            with self.subTest(granted_code=granted_code):
+                user = create_user()
+                store, membership = create_store(
+                    user,
+                    role=StoreMembership.RoleChoices.SELLER,
+                )
+                grant_permission(membership, granted_code)
+                product = create_product(store)
+
+                response = authenticated_client(user).post(
+                    '/api/v1/inventory/purchases/batch/',
+                    {
+                        'product': product.id,
+                        'purchase_price': 100,
+                        'sale_price': 200,
+                        'items': [{'size': '42', 'quantity': 1}],
+                    },
+                    format='json',
+                )
+
+                self.assertEqual(
+                    response.status_code,
+                    status.HTTP_403_FORBIDDEN,
+                )
+                self.assertFalse(product.variants.exists())
+
+        user = create_user()
+        store, membership = create_store(
+            user,
+            role=StoreMembership.RoleChoices.SELLER,
+        )
+        grant_permission(membership, 'manage_inventory')
+        grant_permission(membership, 'manage_catalog')
+        product = create_product(store)
+
+        allowed_response = authenticated_client(user).post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': product.id,
+                'purchase_price': 100,
+                'sale_price': 200,
+                'items': [{'size': '42', 'quantity': 1}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            allowed_response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
     def test_purchase_and_adjustment_update_stock(self):
         purchase_response = self.client.post(
             '/api/v1/inventory/movements/create/',
@@ -646,6 +803,51 @@ class InventoryApiTests(TestCase):
             invalid_range_response.status_code,
             status.HTTP_400_BAD_REQUEST,
         )
+
+
+class ConcurrentBatchPurchaseTests(TransactionTestCase):
+    reset_sequences = True
+
+    def test_concurrent_purchases_share_one_new_variant(self):
+        user = create_user()
+        store, _ = create_store(user)
+        product = create_product(store)
+        barrier = Barrier(2)
+        outcomes = []
+
+        def purchase(quantity):
+            close_old_connections()
+            try:
+                barrier.wait()
+                create_batch_purchase(
+                    store=store,
+                    product=product,
+                    items=[{'size': '42', 'quantity': quantity}],
+                    purchase_price=100,
+                    sale_price=200,
+                    user=user,
+                    note='Concurrent shipment',
+                )
+                outcomes.append('created')
+            except Exception as error:
+                outcomes.append(type(error).__name__)
+            finally:
+                close_old_connections()
+
+        threads = [Thread(target=purchase, args=(quantity,)) for quantity in (2, 3)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        variant = ProductVariant.objects.get(product=product, size='42')
+        self.assertCountEqual(outcomes, ['created', 'created'])
+        self.assertEqual(variant.current_stock, 5)
+        self.assertEqual(
+            ProductVariant.objects.filter(product=product, size='42').count(),
+            1,
+        )
+        self.assertEqual(InventoryMovement.objects.count(), 2)
 
 
 class ConcurrentCheckoutTests(TransactionTestCase):
