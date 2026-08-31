@@ -1,14 +1,20 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from django.http import Http404
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from datetime import datetime
 from rest_framework.exceptions import ValidationError
+from drf_spectacular.utils import extend_schema
 
-from catalog.models import ProductVariant
+from catalog.models import Product, ProductVariant
+from catalog.permissions import CanManageCatalog
 from inventory.models import InventoryMovement
-from inventory.services import create_inventory_movement
+from inventory.services import create_batch_purchase, create_inventory_movement
 from inventory.api.serializers import (
+    BatchInventoryPurchaseResponseSerializer,
+    BatchInventoryPurchaseSerializer,
     InventoryMovementCreateSerializer,
     InventoryMovementHistorySerializer,
     InventorySerializer,
@@ -39,6 +45,63 @@ class InventoryMovementCreateView(generics.CreateAPIView):
         )
 
         serializer.instance = movement
+
+
+class BatchInventoryPurchaseView(generics.GenericAPIView):
+    serializer_class = BatchInventoryPurchaseSerializer
+    permission_classes = [
+        IsAuthenticated,
+        CanManageInventory,
+        CanManageCatalog,
+    ]
+
+    @extend_schema(
+        responses={
+            status.HTTP_201_CREATED: BatchInventoryPurchaseResponseSerializer,
+        }
+    )
+    def post(self, request):
+        try:
+            membership = get_current_membership(request.user)
+        except MembershipResolutionError as error:
+            raise Http404('Store Not Found') from error
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        product = get_object_or_404(
+            Product.objects.filter(store_id=membership.store_id),
+            pk=serializer.validated_data['product'],
+        )
+        movements = create_batch_purchase(
+            store=membership.store,
+            product=product,
+            items=serializer.validated_data['items'],
+            purchase_price=serializer.validated_data.get('purchase_price'),
+            sale_price=serializer.validated_data.get('sale_price'),
+            note=serializer.validated_data.get('note', ''),
+            user=request.user,
+        )
+        response_data = {
+            'product': product.id,
+            'items': [
+                {
+                    'movement': movement.id,
+                    'variant': movement.variant_id,
+                    'size': movement.variant.size,
+                    'quantity': movement.quantity,
+                    'current_stock': movement.variant.current_stock,
+                }
+                for movement in movements
+            ],
+        }
+        response_serializer = BatchInventoryPurchaseResponseSerializer(
+            response_data
+        )
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 

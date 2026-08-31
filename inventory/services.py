@@ -2,7 +2,8 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
 from inventory.models import InventoryMovement
-from catalog.models import ProductVariant
+from catalog.models import Product, ProductVariant
+from catalog.services import create_variant
 
 
 
@@ -62,3 +63,68 @@ def create_inventory_movement(*, store, variant, quantity, movement_type, user, 
         created_by = user, 
     )
     return movement
+
+
+@transaction.atomic
+def create_batch_purchase(
+    *,
+    store,
+    product,
+    items,
+    user,
+    purchase_price=None,
+    sale_price=None,
+    note='',
+):
+    try:
+        product = (
+            Product.objects
+            .select_for_update()
+            .get(pk=product.pk, store_id=store.id)
+        )
+    except Product.DoesNotExist as error:
+        raise ValidationError({
+            'product': 'The selected product does not belong to this store.'
+        }) from error
+
+    variants_by_size = {
+        variant.size: variant
+        for variant in (
+            ProductVariant.objects
+            .select_for_update()
+            .filter(product=product)
+        )
+    }
+    movements = []
+
+    for item in items:
+        size = item['size']
+        variant = variants_by_size.get(size)
+
+        if variant is None:
+            if purchase_price is None or sale_price is None:
+                message = 'Purchase and sale prices are required for new sizes.'
+                raise ValidationError({
+                    'purchase_price': message,
+                    'sale_price': message,
+                })
+
+            variant = create_variant(
+                product=product,
+                size=size,
+                purchase_price=purchase_price,
+                sale_price=sale_price,
+            )
+            variants_by_size[size] = variant
+
+        movement = create_inventory_movement(
+            store=store,
+            variant=variant,
+            quantity=item['quantity'],
+            movement_type=InventoryMovement.MovementType.PURCHASE,
+            user=user,
+            note=note,
+        )
+        movements.append(movement)
+
+    return movements
