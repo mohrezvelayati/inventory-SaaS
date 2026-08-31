@@ -64,6 +64,55 @@ class InventoryMovementCreateSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class BatchPurchaseItemSerializer(serializers.Serializer):
+    size = serializers.CharField(max_length=50, trim_whitespace=True)
+    quantity = serializers.IntegerField(min_value=1)
+
+    def validate_size(self, value):
+        if not value:
+            raise serializers.ValidationError('Size cannot be blank.')
+        return value
+
+
+class BatchInventoryPurchaseSerializer(serializers.Serializer):
+    product = serializers.IntegerField(min_value=1)
+    purchase_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        min_value=0,
+        required=False,
+    )
+    sale_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        min_value=0,
+        required=False,
+    )
+    note = serializers.CharField(required=False, allow_blank=True, default='')
+    items = BatchPurchaseItemSerializer(many=True, allow_empty=False)
+
+    def validate_items(self, items):
+        sizes = [item['size'] for item in items]
+        if len(sizes) != len(set(sizes)):
+            raise serializers.ValidationError(
+                'Each size may appear only once.'
+            )
+        return items
+
+
+class BatchPurchaseResultItemSerializer(serializers.Serializer):
+    movement = serializers.IntegerField()
+    variant = serializers.IntegerField()
+    size = serializers.CharField()
+    quantity = serializers.IntegerField()
+    current_stock = serializers.IntegerField()
+
+
+class BatchInventoryPurchaseResponseSerializer(serializers.Serializer):
+    product = serializers.IntegerField()
+    items = BatchPurchaseResultItemSerializer(many=True)
+
+
 class InventoryMovementHistorySerializer(serializers.ModelSerializer):
     product_id = serializers.IntegerField(
         source='variant.product_id',

@@ -1,6 +1,6 @@
 # Inventory SaaS — AI Project Handoff
 
-Last verified: 2026-08-23  
+Last verified: 2026-08-31
 Backend repository: `mohrezvelayati/inventory-SaaS`  
 Frontend repository: `mohrezvelayati/inventory-saas-frontend`
 
@@ -102,7 +102,7 @@ Typical local paths used during development:
 - SimpleJWT
 - drf-spectacular / OpenAPI / Swagger
 - Latest verified backend commit while writing this file: `421ea5c`
-- Complete test suite at last verification: 115 passing tests
+- Complete test suite at last verification: 126 passing tests
 
 ### Frontend
 
@@ -409,10 +409,17 @@ existing per-variant update endpoint remain unchanged.
 | --- | --- | --- |
 | GET | `/inventory/` | Current variant balances |
 | POST | `/inventory/movements/create/` | Manual purchase/adjustment only |
+| POST | `/inventory/purchases/batch/` | Atomic purchase entry for multiple sizes |
 | GET | `/inventory/movements/history/` | Audit history |
 
 History supports `product_id`, `variant_id`, `created_by_id`,
 `type=purchase|sale|adjustment`, `date_from`, and `date_to`.
+
+Batch purchase requires both `manage_inventory` and `manage_catalog`. It accepts
+one tenant-scoped product, optional shared prices, an optional shared note, and
+one or more unique `{size, quantity}` items. Existing sizes keep their prices;
+missing sizes require both non-negative shared prices. Every item creates a
+normal `purchase` movement, and the entire request rolls back if any item fails.
 
 ### Sales
 
@@ -517,10 +524,16 @@ steps separate:
    zero-stock variant. Select that variant in the form, explain what happened,
    and let retry submit only the movement request.
 
+The batch purchase endpoint is the exception to the two-request UI flow above:
+it intentionally creates any missing sizes and all purchase movements in one
+atomic backend operation. It exists for receiving a shipment across several
+sizes, requires both catalog and inventory management capabilities, and keeps
+the single-size workflow available for ordinary corrections and purchases.
+
 Creating a zero-stock variant from Product Detail remains supported. Variant
 sizes are trimmed and must be non-blank and unique per product; validation or a
 constraint race must return HTTP 400 with a field-level `size` error rather
-than HTTP 500. No combined/atomic endpoint is planned for the MVP.
+than HTTP 500.
 
 Access details: `view_inventory` or `manage_inventory` exposes the inventory
 page and its navigation item; only `manage_inventory` exposes mutation UI; new
@@ -669,7 +682,7 @@ npm run build
 
 At last verification:
 
-- Django: 115/115 tests passed
+- Django: 126/126 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -779,6 +792,8 @@ Important completed phases, based on Git history and current code:
   tests, copy-link test, lint, and production build verification
 - Product creation without variants and inventory-led size/first-stock creation,
   including permission-aware UI and retry after partial two-request failure
+- Atomic batch purchase API for receiving existing and new sizes in one request,
+  with tenant, permission, rollback, and concurrency coverage
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,
