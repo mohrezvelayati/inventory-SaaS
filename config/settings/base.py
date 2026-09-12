@@ -12,6 +12,10 @@ def env_list(name, default=""):
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 
+def env_bool(name, default=False):
+    return os.getenv(name, str(default)).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-local-development-only")
 DEBUG = False
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS")
@@ -110,6 +114,9 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_THROTTLE_CLASSES": (
+        "users.throttling.DemoUserRateThrottle",
+    ),
     "PAGE_SIZE": 20,
     "DEFAULT_THROTTLE_RATES": {
         "auth_login": "10/minute",
@@ -117,6 +124,8 @@ REST_FRAMEWORK = {
         "password_reset": "5/hour",
         "invitation_preview": "30/hour",
         "invitation_accept": "10/hour",
+        "demo_login": "20/hour",
+        "demo_user": "300/hour",
     },
 }
 
@@ -163,3 +172,4 @@ KAVENEGAR_TEMPLATE = os.getenv("KAVENEGAR_TEMPLATE", "inventory-password-reset")
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 APP_ENVIRONMENT = os.getenv("APP_ENVIRONMENT", "development")
 APP_RELEASE = os.getenv("APP_RELEASE") or os.getenv("RENDER_GIT_COMMIT", "local")
+DEMO_MODE_ENABLED = env_bool("DEMO_MODE_ENABLED", False)

@@ -37,6 +37,11 @@ Current portfolio deployment:
    - `SENTRY_DSN=<backend project DSN>`
    - `APP_RELEASE=<git SHA>` when release tracking is configured
 
+   The portfolio blueprint also enables `DEMO_MODE_ENABLED=true` and
+   `SEED_DEMO_ON_START=true`. The container rebuilds only the marked demo
+   tenant after migrations and before Gunicorn starts. Disable both values
+   before this deployment is ever repurposed for real customer data.
+
 6. Verify `/api/v1/health/live/`, `/api/v1/health/ready/`, `/api/v1/docs/`, and
    `/admin/login/` over HTTPS. Do not print `SECRET_KEY` or `DATABASE_URL`.
 
@@ -54,6 +59,7 @@ command as `python manage.py migrate --noinput`.
 
    - `VITE_API_BASE_URL=https://<backend>.onrender.com/api/v1`
    - `VITE_PASSWORD_RESET_ENABLED=false`
+   - `VITE_DEMO_MODE_ENABLED=true`
    - `VITE_SENTRY_DSN=<frontend project DSN>`
    - `VITE_APP_ENVIRONMENT=production`
 
@@ -63,6 +69,9 @@ command as `python manage.py migrate --noinput`.
 6. Deploy, then add the final Static Site origin to the backend CORS/CSRF
    variables and redeploy the backend.
 7. Verify direct navigation to `/login`, `/register`, and `/products`.
+8. Click **ورود به نسخهٔ نمایشی**, confirm the dashboard is populated, and
+   make a small reversible change. Use `python manage.py seed_demo --reset`
+   from a Render shell if an immediate rebuild is needed.
 
 ## 4. SMS activation
 

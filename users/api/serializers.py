@@ -63,9 +63,10 @@ class UserSerializer(serializers.ModelSerializer):
             'username',
             'full_name',
             'phone_number',
+            'is_demo',
             'membership',
         ]
-        read_only_fields = ['id', 'membership']
+        read_only_fields = ['id', 'is_demo', 'membership']
 
     @extend_schema_field(
         CurrentMembershipSerializer(allow_null=True)
@@ -83,6 +84,11 @@ class UserSerializer(serializers.ModelSerializer):
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
+
+
+class TokenPairSerializer(serializers.Serializer):
+    access = serializers.CharField(read_only=True)
+    refresh = serializers.CharField(read_only=True)
 
 
 class LogoutSerializer(serializers.Serializer):
