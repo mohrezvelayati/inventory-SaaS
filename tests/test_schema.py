@@ -7,6 +7,7 @@ class OpenApiSchemaTests(SimpleTestCase):
         schema = SchemaGenerator().get_schema(request=None, public=True)
 
         expected_paths = {
+            '/api/v1/auth/demo/',
             '/api/v1/catalog/products/',
             '/api/v1/inventory/movements/history/',
             '/api/v1/sales/',

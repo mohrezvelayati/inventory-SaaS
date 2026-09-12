@@ -4,6 +4,7 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from users.api.views import (
+    DemoLoginView,
     LoginView,
     LogoutView,
     PasswordChangeView,
@@ -25,6 +26,7 @@ urlpatterns = [
 
     # Token authentication endpoints
     path('api/v1/auth/login/', LoginView.as_view(), name='token_obtain_pair'),
+    path('api/v1/auth/demo/', DemoLoginView.as_view(), name='demo_login'),
     path('api/v1/auth/token/refresh/',TokenRefreshView.as_view(),name='token_refresh'),
     path('api/v1/auth/logout/', LogoutView.as_view(), name='logout'),
     path('api/v1/auth/password/change/', PasswordChangeView.as_view(), name='password-change'),

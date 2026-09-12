@@ -10,6 +10,17 @@
 - First checks for an incident: Render events, structured application logs,
   readiness, database status, deployed SHA, and Sentry regression list.
 
+## Portfolio demo recovery
+
+- The shared demo account is intentionally writable and may contain visitor
+  changes until the next backend deploy/container restart.
+- To rebuild it immediately, run
+  `DEMO_MODE_ENABLED=true python manage.py seed_demo --reset` in the backend
+  environment. The operation is atomic and targets only the internally marked
+  demo tenant.
+- One-click login does not depend on the public username or password, so a
+  visitor profile edit cannot disable the demo entry button.
+
 ## Backup and restore
 
 Do not treat a backup as valid until it has been restored.

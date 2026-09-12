@@ -221,6 +221,8 @@ in the MVP.
 - Refresh-token blacklisting and password-change revocation are enabled
 - Frontend stores both tokens in `sessionStorage` under
   `inventory.auth.tokens`
+- The portfolio environment exposes guarded `POST /auth/demo/` one-click login
+  for the single internally marked demo manager; it is disabled by default.
 - `apiRequest()` attaches the bearer token, coalesces simultaneous refreshes,
   retries once after a 401, and dispatches `auth:expired` if refresh fails
 
@@ -355,6 +357,7 @@ plain array.
 | POST | `/users/register/` | Normal owner registration; creates User only |
 | GET/PATCH | `/users/me/` | Current profile, membership, store, effective capabilities |
 | POST | `/auth/login/` | Username/password JWT pair |
+| POST | `/auth/demo/` | Public guarded demo JWT pair; portfolio environment only |
 | POST | `/auth/token/refresh/` | Rotate/refresh access token |
 | POST | `/auth/logout/` | Blacklist a refresh token; idempotent |
 | POST | `/auth/password/change/` | Authenticated password change and token revocation |
@@ -731,8 +734,8 @@ High-priority blockers:
 - DRF auth throttles and PostgreSQL-backed OTP rate limits exist; invitation
   preview/accept endpoints still need dedicated abuse-rate scopes.
 - No automated SMS/email invitation delivery.
-- No repeatable `seed_demo` management command; presentation data must still be
-  created manually.
+- The public demo account is shared and writable, so concurrent visitors may
+  see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
   dedicated history endpoint.
 - CI, Render/Vercel configuration, health checks, JSON logging, Sentry hooks,
@@ -748,8 +751,8 @@ High-priority blockers:
 Recommended next engineering phase:
 
 1. Commit and push the invitation frontend after review.
-2. Add a small, idempotent development-only `seed_demo` command before the
-   polished portfolio demonstration.
+2. Monitor the shared demo rate limits and dataset size after publishing the
+   one-click portfolio entry.
 3. Run the complete manager invite -> employee registration -> sale workflow
    manually across both repositories.
 4. Move configuration and secrets to environment variables and split settings.
@@ -779,6 +782,8 @@ Important completed phases, based on Git history and current code:
   tests, copy-link test, lint, and production build verification
 - Product creation without variants and inventory-led size/first-stock creation,
   including permission-aware UI and retry after partial two-request failure
+- Guarded one-click demo login plus an atomic service-backed synthetic tenant
+  rebuild covering every implemented product workflow
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,

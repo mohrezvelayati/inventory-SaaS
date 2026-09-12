@@ -21,6 +21,11 @@ maintained separately in
 - Swagger UI: <https://inventory-saas-api-k6wp.onrender.com/api/v1/docs/>
 - Readiness: <https://inventory-saas-api-k6wp.onrender.com/api/v1/health/ready/>
 
+Use **ورود به نسخهٔ نمایشی** on the login page to enter the shared, writable
+portfolio store without registering or entering credentials. The synthetic
+tenant is rebuilt on backend deploy/startup, and no real customer data belongs
+in this environment.
+
 ## What the MVP Does
 
 - JWT registration, login, refresh, logout, and current-user context
@@ -210,6 +215,16 @@ pip install -r requirements-dev.txt
 python manage.py migrate
 python manage.py runserver
 ```
+
+To create or rebuild the complete shared demo tenant locally:
+
+```bash
+DEMO_MODE_ENABLED=true python manage.py seed_demo --reset
+```
+
+The command uses the existing catalog, inventory, sales, membership,
+invitation, and wanted services so cached stock and audit history remain
+consistent. It refuses to run unless demo mode is explicitly enabled.
 
 Alternatively, start Django and PostgreSQL together:
 

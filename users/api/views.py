@@ -1,4 +1,7 @@
+from django.conf import settings
+from django.http import Http404
 from rest_framework import generics, status
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -16,6 +19,7 @@ from users.api.serializers import (
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
+    TokenPairSerializer,
     UserSerializer,
 )
 from users.services import (
@@ -24,6 +28,8 @@ from users.services import (
     confirm_password_reset,
     request_password_reset,
 )
+from stores.demo import refresh_demo_timeline
+from stores.services import MembershipResolutionError
 
 
 
@@ -39,6 +45,44 @@ class RegisterView(generics.CreateAPIView):
 class LoginView(TokenObtainPairView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'auth_login'
+
+
+class DemoUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = 'The demo account is temporarily unavailable.'
+    default_code = 'demo_unavailable'
+
+
+@extend_schema(
+    auth=[],
+    request=None,
+    responses={
+        200: TokenPairSerializer,
+        404: OpenApiResponse(description='Demo mode is disabled'),
+        503: OpenApiResponse(description='Demo account is unavailable'),
+    },
+)
+class DemoLoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'demo_login'
+
+    def post(self, request):
+        if not settings.DEMO_MODE_ENABLED:
+            raise Http404
+
+        try:
+            user = User.objects.get(is_demo=True, is_active=True)
+            refresh_demo_timeline(user=user)
+        except (User.DoesNotExist, MembershipResolutionError) as error:
+            raise DemoUnavailable from error
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+        })
 
 
 class MeView(generics.RetrieveUpdateAPIView):

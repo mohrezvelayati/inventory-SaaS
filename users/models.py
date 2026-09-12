@@ -1,13 +1,24 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.db.models import Q
 
 
 class User(AbstractUser):
     full_name = models.CharField(max_length=255)
     username = models.CharField(max_length=150, unique=True)
     phone_number = models.CharField(max_length=11, unique=True)
+    is_demo = models.BooleanField(default=False, editable=False)
     
     REQUIRED_FIELDS = ['phone_number']
+
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                fields=['is_demo'],
+                condition=Q(is_demo=True),
+                name='unique_demo_user',
+            ),
+        ]
 
     def __str__(self):
         return self.username

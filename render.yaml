@@ -23,6 +23,10 @@ services:
         value: disabled
       - key: RUN_MIGRATIONS
         value: true
+      - key: DEMO_MODE_ENABLED
+        value: true
+      - key: SEED_DEMO_ON_START
+        value: true
       - key: WEB_CONCURRENCY
         value: 2
 
