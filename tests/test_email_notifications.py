@@ -59,3 +59,16 @@ class SaleCompletedEmailTests(SimpleTestCase):
             )
 
         send_mail_mock.assert_called_once()
+
+    @patch(
+        "notifications.email.send_mail",
+        side_effect=OSError("Connection refused."),
+    )
+    def test_network_error_raises_delivery_error(self, send_mail_mock):
+        with self.assertRaises(EmailDeliveryError):
+            send_sale_completed_email(
+                recipient_email="manager@example.com",
+                payload=self.payload,
+            )
+
+        send_mail_mock.assert_called_once()

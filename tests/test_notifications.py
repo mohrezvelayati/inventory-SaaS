@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.db import transaction
 from django.test import TestCase
@@ -114,7 +115,21 @@ class SaleNotificationOutboxTests(TestCase):
             1,
         )
 
-    def test_sale_and_notification_event_roll_back_together(self):
+    @patch("notifications.tasks.deliver_notification_event_task.delay")
+    def test_delivery_is_enqueued_only_after_commit(self, delay_mock):
+        with self.captureOnCommitCallbacks(execute=True):
+            complete_sale(
+                sale=self.sale,
+                user=self.user,
+            )
+
+            delay_mock.assert_not_called()
+
+        event = NotificationEvent.objects.get(sale=self.sale)
+        delay_mock.assert_called_once_with(event.id)
+
+    @patch("notifications.tasks.deliver_notification_event_task.delay")
+    def test_sale_and_notification_event_roll_back_together(self, delay_mock):
         with self.assertRaises(RuntimeError):
             with transaction.atomic():
                 complete_sale(
@@ -140,8 +155,10 @@ class SaleNotificationOutboxTests(TestCase):
                 sale=self.sale,
             ).exists()
         )
+        delay_mock.assert_not_called()
 
-    def test_sale_without_notification_email_creates_no_event(self):
+    @patch("notifications.tasks.deliver_notification_event_task.delay")
+    def test_sale_without_notification_email_creates_no_event(self, delay_mock):
         self.store.notification_email = ""
         self.store.save(update_fields=["notification_email"])
 
@@ -155,3 +172,28 @@ class SaleNotificationOutboxTests(TestCase):
                 sale=self.sale,
             ).exists()
         )
+        delay_mock.assert_not_called()
+
+    @patch(
+        "notifications.tasks.deliver_notification_event_task.delay",
+        side_effect=OSError("Redis is unavailable."),
+    )
+    def test_broker_failure_does_not_roll_back_completed_sale(self, delay_mock):
+        with self.captureOnCommitCallbacks(execute=True):
+            complete_sale(
+                sale=self.sale,
+                user=self.user,
+            )
+
+        self.sale.refresh_from_db()
+        event = NotificationEvent.objects.get(sale=self.sale)
+
+        self.assertEqual(
+            self.sale.status,
+            Sale.StatusChoices.COMPLETED,
+        )
+        self.assertEqual(
+            event.status,
+            NotificationEvent.Status.PENDING,
+        )
+        delay_mock.assert_called_once_with(event.id)

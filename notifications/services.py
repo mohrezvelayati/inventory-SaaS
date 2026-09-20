@@ -1,3 +1,7 @@
+from django.db import transaction
+from django.utils import timezone
+
+from notifications.email import send_sale_completed_email
 from notifications.models import NotificationEvent
 from sales.models import Sale
 
@@ -36,3 +40,73 @@ def create_sale_completed_event(*, sale):
     )
 
     return event
+
+
+def deliver_notification_event(*, event_id):
+    delivery_error = None
+    result = None
+
+    with transaction.atomic():
+        try:
+            event = (
+                NotificationEvent.objects
+                .select_for_update()
+                .get(pk=event_id)
+            )
+        except NotificationEvent.DoesNotExist:
+            return "missing"
+
+        if event.status == NotificationEvent.Status.SENT:
+            return "already_sent"
+
+        event.attempt_count += 1
+
+        try:
+            send_sale_completed_email(
+                recipient_email=event.payload["recipient_email"],
+                payload=event.payload,
+            )
+        except Exception as error:
+            event.status = NotificationEvent.Status.FAILED
+            event.last_error = (
+                f"{type(error).__name__}: {error}"
+            )[:1000]
+            event.sent_at = None
+            delivery_error = error
+            result = "failed"
+        else:
+            event.status = NotificationEvent.Status.SENT
+            event.last_error = ""
+            event.sent_at = timezone.now()
+            result = "sent"
+
+        event.save(
+            update_fields=[
+                "status",
+                "attempt_count",
+                "last_error",
+                "sent_at",
+                "updated_at",
+            ]
+        )
+
+    if delivery_error is not None:
+        raise delivery_error
+
+    return result
+
+
+def enqueue_notification_event_after_commit(*, event):
+    event_id = event.id
+
+    def enqueue():
+        from notifications.tasks import (
+            deliver_notification_event_task,
+        )
+
+        deliver_notification_event_task.delay(event_id)
+
+    transaction.on_commit(
+        enqueue,
+        robust=True,
+    )

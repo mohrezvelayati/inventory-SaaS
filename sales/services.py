@@ -7,7 +7,10 @@ from sales.models import Sale, SaleItem
 from inventory.services import create_inventory_movement
 from catalog.models import ProductVariant
 from dashboard.cache import schedule_dashboard_cache_invalidation
-from notifications.services import create_sale_completed_event
+from notifications.services import (
+    create_sale_completed_event,
+    enqueue_notification_event_after_commit,
+)
 
 
 ### Create empty sale (Draft) ###
@@ -275,7 +278,12 @@ def complete_sale(*, sale, user):
 
     sale.save(update_fields = ['status', 'completed_at'])
 
-    create_sale_completed_event(sale=sale)
+    event = create_sale_completed_event(sale=sale)
+
+    if event is not None:
+        enqueue_notification_event_after_commit(
+            event=event,
+        )
 
     schedule_dashboard_cache_invalidation(sale.store_id)
 

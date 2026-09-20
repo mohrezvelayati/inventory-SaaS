@@ -39,6 +39,8 @@ in this environment.
 - Cached stock balances backed by an inventory movement audit trail
 - Atomic batch purchase entry across existing and new product sizes
 - Draft sales, editable line items, atomic checkout, and cancellation
+- Asynchronous sale-completion email notifications backed by a persistent
+  outbox and bounded Celery retries
 - Tenant-scoped customer management and search/filter by gender and age
 - Wanted-product demand aggregation and request auditing
 - Dashboard metrics and financial/inventory reports
@@ -88,6 +90,7 @@ sales/        Drafts, line items, checkout and cancellation
 customers/    Tenant-scoped customer CRUD, search and gender/age filters
 wanted/       Unavailable-product demand aggregation
 dashboard/    Dashboard metrics and analytical reports
+notifications/ Persistent outbox events and external notification delivery
 tests/        Cross-app integration, concurrency and smoke tests
 ```
 
@@ -236,7 +239,8 @@ docker compose up -d --build db redis backend worker
 
 Redis database `0` is the Celery broker and database `1` stores dashboard
 cache entries. The worker consumes background jobs independently from the web
-process. Celery Beat and business notification tasks are not implemented yet.
+process. Completed sales enqueue an email task only after the database
+transaction commits. Celery Beat is not implemented yet.
 
 Confirm the worker is reachable with:
 
@@ -259,7 +263,7 @@ overrides and never commit real secrets.
 
 Verified on 2026-09-20 with Python 3.12 and Django 5.2:
 
-- 140 Django tests passed against PostgreSQL
+- 155 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors
@@ -269,7 +273,9 @@ settings, invitations, roles/capabilities, tenant isolation, catalog filters
 and bulk pricing, customer/Wanted flows, inventory invariants, concurrent batch
 purchases and checkout, concurrent demand increments, sales lifecycle,
 dashboard/report correctness, schema paths, and the complete
-owner-registration-to-employee-invitation smoke workflow.
+owner-registration-to-employee-invitation smoke workflow. Notification tests
+also cover commit-safe enqueueing, broker failure isolation, delivery state,
+deduplication, and retry behavior.
 
 ## Deployment and Operations
 

@@ -570,11 +570,18 @@ still authoritative.
 - Successful checkout creates a pending `sale_completed` NotificationEvent in
   the same transaction when `Store.notification_email` is configured. If
   checkout rolls back, stock, Sale state, and the event all roll back together.
+- The event ID is enqueued with `transaction.on_commit()`; model instances are
+  never passed to Celery. A broker error after commit is logged and does not
+  undo the completed sale or its pending outbox row.
 - A store without a notification email completes sales normally without
   creating undeliverable pending events.
 - Notification event payloads are JSON snapshots of the completed sale.
   `get_or_create()` plus a database uniqueness constraint on
   `(event_type, sale)` prevents duplicate outbox rows.
+- The worker locks the event row, skips an event already marked `sent`, records
+  every attempt, and persists either `sent`/`sent_at` or `failed`/`last_error`.
+  Temporary SMTP/network errors are retried up to three times with bounded
+  exponential delays of 10, 20, and 40 seconds.
 - Cancellation is allowed only from completed state, restores stock through
   positive adjustments, and marks the sale cancelled.
 
@@ -698,6 +705,13 @@ supplying host, port, credentials, TLS choice, timeout, and default sender via
 environment variables. No email-provider SDK or credential is stored in the
 repository.
 
+Sale-completion email delivery uses at-least-once queue semantics. The
+persistent event and `sent` check prevent normal duplicate task execution from
+resending, but there is still a small unavoidable SMTP gap: a worker crash
+after the provider accepts an email and before the database marks it sent can
+produce a duplicate on retry. Automatic replay of pending rows left by a
+broker outage is not implemented yet.
+
 Render uses the production settings module. A shared production cache requires
 provisioning Redis and supplying `CACHE_URL`; otherwise each backend process
 falls back to its own local-memory cache.
@@ -742,7 +756,7 @@ npm run build
 
 At last backend verification on 2026-09-20:
 
-- Django: 148/148 tests passed
+- Django: 155/155 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -808,10 +822,11 @@ High-priority blockers:
   service and `CACHE_URL` before multiple backend processes can share cached
   dashboard responses.
 - The Celery worker, persistent NotificationEvent outbox, per-store destination
-  email, and tested plain-text Django email service exist. Celery task
-  enqueueing, retry orchestration, production SMTP credentials, and Celery Beat
-  are not implemented yet. No result backend is configured because delivery
-  state lives in the outbox record instead of storing every task result.
+  email, post-commit task enqueueing, bounded retry orchestration, and
+  plain-text Django email service exist. Production SMTP credentials, automatic
+  replay of pending events after a broker outage, and Celery Beat are not
+  implemented yet. No result backend is configured because delivery state
+  lives in the outbox record instead of storing every task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
@@ -828,17 +843,13 @@ High-priority blockers:
 
 Recommended next engineering phase:
 
-1. Add a Celery task that loads one NotificationEvent by ID, calls the isolated
-   Django email service, and records attempt, failure, or success state.
-2. Enqueue the event ID with `transaction.on_commit()` after successful sale
-   checkout; never pass model instances to Celery.
-3. Add bounded transient-error retry behavior and prove duplicate task
-   execution cannot resend an event already marked sent.
-4. Configure a real SMTP provider through environment variables in staging and
+1. Configure a real SMTP provider through environment variables in staging and
    verify delivery without committing credentials.
-5. Add one Celery Beat daily sales/low-stock digest after immediate sale
+2. Add a small replay command for old pending events so a temporary broker
+   outage can be recovered without manually publishing task IDs.
+3. Add one Celery Beat daily sales/low-stock digest after immediate sale
    notification is stable.
-6. Keep dashboard caching and notification delivery independent: Redis outages
+4. Keep dashboard caching and notification delivery independent: Redis outages
    may degrade cache/queue behavior but must not corrupt inventory or sales.
 
 ## 15. Decision history
@@ -871,6 +882,8 @@ Important completed phases, based on Git history and current code:
   pending/sent/failed state, retry metadata, and database-level deduplication
 - Optional per-store notification email, environment-driven Django email
   backends, and a tested plain-text sale-completion email service
+- Post-commit Celery email delivery with persistent attempt state, duplicate
+  suppression for sent events, and bounded retry for transient SMTP failures
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,
