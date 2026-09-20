@@ -138,6 +138,7 @@ user unless proven otherwise.
 | `inventory` | Stock balance mutation and movement audit trail |
 | `customers` | Tenant-scoped customer CRUD |
 | `sales` | Draft invoices, items, checkout, cancellation |
+| `notifications` | Persistent outbox events and external notification delivery |
 | `wanted` | Unavailable-product demand and customer request audit |
 | `dashboard` | Dashboard metrics and analytical reports |
 | `tests` | Shared factories, integration, tenant, concurrency, schema, and E2E tests |
@@ -188,6 +189,7 @@ Store
   ├── Product ── ProductVariant ── InventoryMovement
   ├── Customer
   ├── Sale ── SaleItem
+  │      └── NotificationEvent
   └── WantedProduct ── WantedCustomerRequest
 ```
 
@@ -206,6 +208,7 @@ Important constraints:
 - Invitation token hashes are globally unique.
 - A store can have only one pending invitation for the same phone at a time.
 - Invitation role has a database check limiting it to `seller` or `admin`.
+- A Sale has at most one NotificationEvent for each event type.
 
 The central tenant resolver is `stores.services.get_current_membership(user)`.
 It deliberately uses `.get()`, never `.first()`. No active-store selector exists
@@ -437,6 +440,10 @@ and `date_to`.
 Sale responses include `completed_at`. It is `null` for drafts and is set
 atomically when checkout succeeds.
 
+Completing a sale also persists a `sale_completed` NotificationEvent in the
+same database transaction. This is an internal outbox record; no notification
+API is exposed.
+
 ### Customers, wanted demand, dashboard, reports
 
 | Method | Path |
@@ -553,6 +560,12 @@ still authoritative.
   and marks the sale completed atomically.
 - Completed sales record `completed_at`; dashboards and financial reports use
   the completion date rather than the draft creation date.
+- Successful checkout creates a pending `sale_completed` NotificationEvent in
+  the same transaction. If checkout rolls back, stock, Sale state, and the
+  event all roll back together.
+- Notification event payloads are JSON snapshots of the completed sale.
+  `get_or_create()` plus a database uniqueness constraint on
+  `(event_type, sale)` prevents duplicate outbox rows.
 - Cancellation is allowed only from completed state, restores stock through
   positive adjustments, and marks the sale cancelled.
 
@@ -714,7 +727,7 @@ npm run build
 
 At last backend verification on 2026-09-20:
 
-- Django: 140/140 tests passed
+- Django: 143/143 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -779,10 +792,10 @@ High-priority blockers:
 - Redis-backed caching is optional. Production still needs a managed Redis
   service and `CACHE_URL` before multiple backend processes can share cached
   dashboard responses.
-- The Celery worker foundation exists, but Celery Beat, Telegram delivery,
-  retries, persistent notification events, and idempotency are not implemented
-  yet. No result backend is configured because task state will live in the
-  domain notification-event record instead of storing every task result.
+- The Celery worker and persistent NotificationEvent outbox exist, but Telegram
+  delivery, task enqueueing, retries, and Celery Beat are not implemented yet.
+  No result backend is configured because delivery state lives in the outbox
+  record instead of storing every Celery task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
@@ -799,15 +812,17 @@ High-priority blockers:
 
 Recommended next engineering phase:
 
-1. Add a small persistent notification event/outbox record for idempotent,
-   retryable sale-completed delivery.
-2. Enqueue the event with `transaction.on_commit()` and send a Telegram message
-   from a Celery worker through a separate Telegram service.
-3. Add transient-error retry behavior and prove duplicate task execution cannot
-   send a successfully delivered event twice.
-4. Add one Celery Beat daily sales/low-stock digest after immediate sale
+1. Add per-store Telegram chat configuration and an isolated Telegram API
+   service with environment-based bot credentials.
+2. Add a Celery task that loads one NotificationEvent by ID, sends the message,
+   and records attempt, failure, or success state.
+3. Enqueue the event ID with `transaction.on_commit()` after successful sale
+   checkout; never pass model instances to Celery.
+4. Add transient-error retry behavior and prove duplicate task execution cannot
+   resend an event already marked sent.
+5. Add one Celery Beat daily sales/low-stock digest after immediate sale
    notification is stable.
-5. Keep dashboard caching and notification delivery independent: Redis outages
+6. Keep dashboard caching and notification delivery independent: Redis outages
    may degrade cache/queue behavior but must not corrupt inventory or sales.
 
 ## 15. Decision history
@@ -836,6 +851,8 @@ Important completed phases, based on Git history and current code:
   invalidation and database fallback when Redis is unavailable
 - Celery worker foundation using Redis DB 0 as broker, eager isolated tests, and
   a real broker-to-worker health-check task
+- Transactional sale-completed NotificationEvent outbox with a JSON snapshot,
+  pending/sent/failed state, retry metadata, and database-level deduplication
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,

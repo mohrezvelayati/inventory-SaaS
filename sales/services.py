@@ -7,6 +7,7 @@ from sales.models import Sale, SaleItem
 from inventory.services import create_inventory_movement
 from catalog.models import ProductVariant
 from dashboard.cache import schedule_dashboard_cache_invalidation
+from notifications.services import create_sale_completed_event
 
 
 ### Create empty sale (Draft) ###
@@ -273,6 +274,8 @@ def complete_sale(*, sale, user):
     sale.completed_at = timezone.now()
 
     sale.save(update_fields = ['status', 'completed_at'])
+
+    create_sale_completed_event(sale=sale)
 
     schedule_dashboard_cache_invalidation(sale.store_id)
 

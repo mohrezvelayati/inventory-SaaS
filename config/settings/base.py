@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "catalog",
     "inventory",
     "sales",
+    "notifications.apps.NotificationsConfig",
     "customers",
     "wanted",
     "dashboard",
