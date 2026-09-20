@@ -20,7 +20,10 @@ from tests.factories import (
 class SaleNotificationOutboxTests(TestCase):
     def setUp(self):
         self.user = create_user()
-        self.store, self.membership = create_store(self.user)
+        self.store, self.membership = create_store(
+            self.user,
+            notification_email="manager@example.com",
+        )
 
         product = create_product(self.store)
         self.variant = create_variant(
@@ -73,6 +76,18 @@ class SaleNotificationOutboxTests(TestCase):
             event.payload["completed_at"],
             self.sale.completed_at.isoformat(),
         )
+        self.assertEqual(
+            event.payload["recipient_email"],
+            "manager@example.com",
+        )
+        self.assertEqual(
+            event.payload["store_name"],
+            self.store.name,
+        )
+        self.assertEqual(
+            event.payload["channel_label"],
+            self.sale.get_channel_display(),
+        )
 
     def test_sale_completed_event_creation_is_idempotent(self):
         complete_sale(
@@ -120,6 +135,21 @@ class SaleNotificationOutboxTests(TestCase):
             self.variant.current_stock,
             2,
         )
+        self.assertFalse(
+            NotificationEvent.objects.filter(
+                sale=self.sale,
+            ).exists()
+        )
+
+    def test_sale_without_notification_email_creates_no_event(self):
+        self.store.notification_email = ""
+        self.store.save(update_fields=["notification_email"])
+
+        complete_sale(
+            sale=self.sale,
+            user=self.user,
+        )
+
         self.assertFalse(
             NotificationEvent.objects.filter(
                 sale=self.sale,

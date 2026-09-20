@@ -53,10 +53,13 @@ class StoreCreateView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        
         store = create_store_with_membership(
             user=self.request.user,
-            name=serializer.validated_data['name']
+            name=serializer.validated_data["name"],
+            notification_email=serializer.validated_data.get(
+                "notification_email",
+                "",
+            ),
         )
         serializer.instance = store
 

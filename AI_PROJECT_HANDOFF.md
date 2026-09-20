@@ -209,6 +209,8 @@ Important constraints:
 - A store can have only one pending invitation for the same phone at a time.
 - Invitation role has a database check limiting it to `seller` or `admin`.
 - A Sale has at most one NotificationEvent for each event type.
+- Store `notification_email` is optional. An empty value disables outbound sale
+  email events for that store.
 
 The central tenant resolver is `stores.services.get_current_membership(user)`.
 It deliberately uses `.get()`, never `.first()`. No active-store selector exists
@@ -388,6 +390,10 @@ plain array.
 | POST | `/stores/invitations/{token}/register/` | Public invitation registration, returns JWT |
 | POST | `/stores/invitations/{token}/accept/` | Authenticated existing-user acceptance |
 
+Store responses include optional `notification_email`. Only the manager-only
+store settings endpoint can update it; an empty string disables sale email
+events without affecting checkout.
+
 ### Catalog
 
 | Method | Path |
@@ -441,8 +447,9 @@ Sale responses include `completed_at`. It is `null` for drafts and is set
 atomically when checkout succeeds.
 
 Completing a sale also persists a `sale_completed` NotificationEvent in the
-same database transaction. This is an internal outbox record; no notification
-API is exposed.
+same database transaction when the store has configured a notification email.
+The recipient and sale summary are captured in the JSON payload. This is an
+internal outbox record; no notification API is exposed.
 
 ### Customers, wanted demand, dashboard, reports
 
@@ -561,8 +568,10 @@ still authoritative.
 - Completed sales record `completed_at`; dashboards and financial reports use
   the completion date rather than the draft creation date.
 - Successful checkout creates a pending `sale_completed` NotificationEvent in
-  the same transaction. If checkout rolls back, stock, Sale state, and the
-  event all roll back together.
+  the same transaction when `Store.notification_email` is configured. If
+  checkout rolls back, stock, Sale state, and the event all roll back together.
+- A store without a notification email completes sales normally without
+  creating undeliverable pending events.
 - Notification event payloads are JSON snapshots of the completed sale.
   `get_or_create()` plus a database uniqueness constraint on
   `(event_type, sale)` prevents duplicate outbox rows.
@@ -683,6 +692,12 @@ Django dashboard cache. The worker has `RUN_MIGRATIONS=false`; migrations remain
 the backend/release process's responsibility. Tests run Celery tasks eagerly,
 so the automated suite does not require a live broker.
 
+Development email defaults to Django's console backend and tests use its
+in-memory backend. Production delivery requires selecting the SMTP backend and
+supplying host, port, credentials, TLS choice, timeout, and default sender via
+environment variables. No email-provider SDK or credential is stored in the
+repository.
+
 Render uses the production settings module. A shared production cache requires
 provisioning Redis and supplying `CACHE_URL`; otherwise each backend process
 falls back to its own local-memory cache.
@@ -727,7 +742,7 @@ npm run build
 
 At last backend verification on 2026-09-20:
 
-- Django: 143/143 tests passed
+- Django: 148/148 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -792,10 +807,11 @@ High-priority blockers:
 - Redis-backed caching is optional. Production still needs a managed Redis
   service and `CACHE_URL` before multiple backend processes can share cached
   dashboard responses.
-- The Celery worker and persistent NotificationEvent outbox exist, but Telegram
-  delivery, task enqueueing, retries, and Celery Beat are not implemented yet.
-  No result backend is configured because delivery state lives in the outbox
-  record instead of storing every Celery task result.
+- The Celery worker, persistent NotificationEvent outbox, per-store destination
+  email, and tested plain-text Django email service exist. Celery task
+  enqueueing, retry orchestration, production SMTP credentials, and Celery Beat
+  are not implemented yet. No result backend is configured because delivery
+  state lives in the outbox record instead of storing every task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
@@ -812,14 +828,14 @@ High-priority blockers:
 
 Recommended next engineering phase:
 
-1. Add per-store Telegram chat configuration and an isolated Telegram API
-   service with environment-based bot credentials.
-2. Add a Celery task that loads one NotificationEvent by ID, sends the message,
-   and records attempt, failure, or success state.
-3. Enqueue the event ID with `transaction.on_commit()` after successful sale
+1. Add a Celery task that loads one NotificationEvent by ID, calls the isolated
+   Django email service, and records attempt, failure, or success state.
+2. Enqueue the event ID with `transaction.on_commit()` after successful sale
    checkout; never pass model instances to Celery.
-4. Add transient-error retry behavior and prove duplicate task execution cannot
-   resend an event already marked sent.
+3. Add bounded transient-error retry behavior and prove duplicate task
+   execution cannot resend an event already marked sent.
+4. Configure a real SMTP provider through environment variables in staging and
+   verify delivery without committing credentials.
 5. Add one Celery Beat daily sales/low-stock digest after immediate sale
    notification is stable.
 6. Keep dashboard caching and notification delivery independent: Redis outages
@@ -853,6 +869,8 @@ Important completed phases, based on Git history and current code:
   a real broker-to-worker health-check task
 - Transactional sale-completed NotificationEvent outbox with a JSON snapshot,
   pending/sent/failed state, retry metadata, and database-level deduplication
+- Optional per-store notification email, environment-driven Django email
+  backends, and a tested plain-text sale-completion email service
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,
@@ -902,7 +920,9 @@ sequence was deliberate:
 8. Introduce Redis first for one measured, read-heavy dashboard use case while
    keeping PostgreSQL authoritative and invalidation transaction-aware.
 9. Add Celery as a separately deployable worker foundation before introducing
-   notification domain models or external Telegram side effects.
+   notification domain models or external email side effects.
+10. Choose standard SMTP email over Telegram for store notifications, keeping
+    provider credentials in environment variables and avoiding vendor SDKs.
 
 Future work should continue this pattern: let a concrete workflow expose the
 smallest missing contract, implement it end to end, test the invariant, and

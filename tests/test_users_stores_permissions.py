@@ -415,13 +415,17 @@ class StoreMembershipTests(TestCase):
 
         response = authenticated_client(seller).patch(
             '/api/v1/stores/current/',
-            {'name': 'Unauthorized Rename'},
+            {
+                'name': 'Unauthorized Rename',
+                'notification_email': 'attacker@example.com',
+            },
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.store.refresh_from_db()
         self.assertNotEqual(self.store.name, 'Unauthorized Rename')
+        self.assertEqual(self.store.notification_email, '')
 
     def test_database_rejects_second_membership_for_user(self):
         second_store, _ = create_store()
@@ -508,6 +512,49 @@ class StoreMembershipTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_manager_can_update_store_notification_email(self):
+        response = self.client.patch(
+            "/api/v1/stores/current/",
+            {
+                "notification_email": "manager@example.com",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.store.refresh_from_db()
+
+        self.assertEqual(
+            self.store.notification_email,
+            "manager@example.com",
+        )
+        self.assertEqual(
+            response.data["notification_email"],
+            "manager@example.com",
+        )
+
+    def test_store_rejects_invalid_notification_email(self):
+        response = self.client.patch(
+            "/api/v1/stores/current/",
+            {
+                "notification_email": "not-an-email",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.store.refresh_from_db()
+
+        self.assertEqual(
+            self.store.notification_email,
+            "",
+        )
 
 
 class StoreInvitationApiTests(TestCase):

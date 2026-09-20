@@ -36,7 +36,11 @@ def create_store(user=None, role=StoreMembership.RoleChoices.MANAGER, **override
     user = user or create_user()
     number = next(_sequence)
     store = Store.objects.create(
-        name=overrides.get('name', f'Store {number}')
+        name=overrides.get("name", f"Store {number}"),
+        notification_email=overrides.get(
+            "notification_email",
+            "",
+        ),
     )
     membership = StoreMembership.objects.create(
         store=store,

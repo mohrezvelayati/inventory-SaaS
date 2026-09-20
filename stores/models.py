@@ -4,6 +4,7 @@ from django.db.models import Q
 
 class Store(models.Model):
     name = models.CharField(max_length=255)
+    notification_email = models.EmailField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
