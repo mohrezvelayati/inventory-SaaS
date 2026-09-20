@@ -43,7 +43,8 @@ class SaleSerializer(serializers.ModelSerializer):
             "status",
             "total_amount",
             "items",
-            "created_at"
+            "created_at",
+            "completed_at",
         ]
 
 
@@ -56,6 +57,7 @@ class SaleCreateSerializer(serializers.Serializer):
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
     items = SaleItemSerializer(many=True, read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
+    completed_at = serializers.DateTimeField(read_only=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

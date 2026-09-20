@@ -432,6 +432,9 @@ History supports `product_id`, `variant_id`, `created_by_id`,
 Sale list supports `search` by customer/id, `status`, `channel`, `date_from`,
 and `date_to`.
 
+Sale responses include `completed_at`. It is `null` for drafts and is set
+atomically when checkout succeeds.
+
 ### Customers, wanted demand, dashboard, reports
 
 | Method | Path |
@@ -542,6 +545,8 @@ still authoritative.
 - Checkout locks the sale and variants in deterministic ID order, aggregates
   duplicate variant requirements, validates stock, writes negative movements,
   and marks the sale completed atomically.
+- Completed sales record `completed_at`; dashboards and financial reports use
+  the completion date rather than the draft creation date.
 - Cancellation is allowed only from completed state, restores stock through
   positive adjustments, and marks the sale cancelled.
 

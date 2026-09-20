@@ -9,7 +9,7 @@ def get_top_products(*, store, date_from, date_to):
     return SaleItem.objects.filter(
         sale__store = store,
         sale__status = 'completed',
-        sale__created_at__date__range = [date_from, date_to]
+        sale__completed_at__date__range = [date_from, date_to]
     ).values(
         product_name=F('variant__product__name')
     ).annotate(

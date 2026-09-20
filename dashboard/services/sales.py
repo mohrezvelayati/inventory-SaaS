@@ -11,7 +11,7 @@ def get_sales_overview(*, store, date_from, date_to):
     sales = Sale.objects.filter(
         store=store,
         status='completed',
-        created_at__date__range=[date_from, date_to]
+        completed_at__date__range=[date_from, date_to]
     )
 
     sales_summary = sales.aggregate(

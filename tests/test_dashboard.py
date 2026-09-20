@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.test import TestCase
@@ -64,6 +65,34 @@ class DashboardServiceTests(TestCase):
 
         self.assertEqual(result['total_variants'], 0)
         self.assertEqual(result['total_stock'], 0)
+
+
+    def test_sales_overview_uses_completion_date(self):
+        sale = create_sale(
+            self.store,
+            self.membership,
+            status=Sale.StatusChoices.COMPLETED,
+            total_amount=Decimal('1500'),
+            completed_at=timezone.now(),
+        )
+
+        Sale.objects.filter(pk=sale.pk).update(
+            created_at=timezone.now() - timedelta(days=2),
+        )
+
+        today = timezone.localdate()
+
+        result = get_sales_overview(
+            store=self.store,
+            date_from=today,
+            date_to=today,
+        )
+
+        self.assertEqual(result['orders_count'], 1)
+        self.assertEqual(
+            result['revenue'],
+            Decimal('1500'),
+        )
 
 
 class DashboardApiTests(TestCase):

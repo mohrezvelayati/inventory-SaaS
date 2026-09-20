@@ -32,6 +32,15 @@ class Sale(models.Model):
     status = models.CharField(max_length=20,choices=StatusChoices.choices,default=StatusChoices.DRAFT)
     total_amount = models.DecimalField(max_digits=12, decimal_places=0, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=['store', 'status', 'completed_at'],
+                name='sale_store_status_done_at_idx',
+            ),
+        ]
 
     def __str__(self):
         customer = self.customer

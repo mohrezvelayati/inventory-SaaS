@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from sales.models import Sale, SaleItem
@@ -267,8 +268,9 @@ def complete_sale(*, sale, user):
         )
 
     sale.status = Sale.StatusChoices.COMPLETED
+    sale.completed_at = timezone.now()
 
-    sale.save(update_fields = ['status'])
+    sale.save(update_fields = ['status', 'completed_at'])
 
     return sale
 

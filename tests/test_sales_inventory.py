@@ -1,5 +1,6 @@
 from threading import Barrier, Thread
 
+from django.utils import timezone
 from django.db import close_old_connections
 from django.test import TestCase, TransactionTestCase
 from rest_framework import status
@@ -38,6 +39,7 @@ class SaleFlowTests(TestCase):
 
     def test_complete_sale_decreases_stock_once(self):
         sale = create_sale(self.store, self.membership)
+        completion_started_at = timezone.now()
         item_response = self.client.post(
             f'/api/v1/sales/{sale.id}/items/',
             {'variant': self.variant.id, 'quantity': 2, 'discount': 100},
@@ -57,12 +59,26 @@ class SaleFlowTests(TestCase):
 
         self.assertEqual(complete_response.status_code, status.HTTP_200_OK)
         sale.refresh_from_db()
+        self.assertIsNotNone(sale.completed_at)
+        self.assertGreaterEqual(sale.completed_at, completion_started_at)
+        self.assertLessEqual(sale.completed_at, timezone.now())
         self.variant.refresh_from_db()
         self.assertEqual(sale.status, Sale.StatusChoices.COMPLETED)
         self.assertEqual(self.variant.current_stock, 8)
         self.assertEqual(
             InventoryMovement.objects.get().quantity,
             -2,
+        )
+        detail_response = self.client.get(
+            f'/api/v1/sales/{sale.id}/'
+        )
+
+        self.assertEqual(
+            detail_response.status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertIsNotNone(
+            detail_response.data['completed_at']
         )
 
         second_response = self.client.post(
@@ -158,6 +174,7 @@ class SaleFlowTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         sale.refresh_from_db()
+        self.assertIsNone(sale.completed_at)
         self.variant.refresh_from_db()
         second_variant.refresh_from_db()
         self.assertEqual(sale.status, Sale.StatusChoices.DRAFT)
@@ -244,6 +261,9 @@ class SaleFlowTests(TestCase):
         self.assertEqual(int(response.data['total_amount']), 0)
         self.assertEqual(response.data['items'], [])
         self.assertIn('created_at', response.data)
+
+        self.assertIn('completed_at', response.data)
+        self.assertIsNone(response.data['completed_at'])
 
     def test_sale_creation_requires_payment_method(self):
         response = self.client.post(
