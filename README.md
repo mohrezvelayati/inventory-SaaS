@@ -71,6 +71,7 @@ Register owner
 - drf-spectacular / OpenAPI / Swagger UI
 - Docker / Docker Compose
 - GitHub Actions and Render, with optional Sentry integration
+- Redis-backed dashboard caching
 
 Dependencies are pinned in [`requirements.txt`](requirements.txt).
 

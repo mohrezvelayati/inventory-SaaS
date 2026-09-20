@@ -173,3 +173,30 @@ SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 APP_ENVIRONMENT = os.getenv("APP_ENVIRONMENT", "development")
 APP_RELEASE = os.getenv("APP_RELEASE") or os.getenv("RENDER_GIT_COMMIT", "local")
 DEMO_MODE_ENABLED = env_bool("DEMO_MODE_ENABLED", False)
+
+
+CACHE_URL = os.getenv('CACHE_URL')
+
+if CACHE_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': CACHE_URL,
+            'KEY_PREFIX': 'inventory-saas',
+            'OPTIONS': {
+                'socket_connect_timeout': 1,
+                'socket_timeout': 1,
+            },
+        },
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'inventory-saas-local',
+        },
+    }
+
+DASHBOARD_CACHE_TTL_SECONDS = int(
+    os.getenv('DASHBOARD_CACHE_TTL_SECONDS', '60')
+)

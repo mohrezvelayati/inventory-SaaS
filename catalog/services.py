@@ -3,6 +3,7 @@ from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 
 from catalog.models import Category, Product, ProductVariant
+from dashboard.cache import schedule_dashboard_cache_invalidation
 
 
 VARIANT_SIZE_DUPLICATE_ERROR = "A variant with this size already exists."
@@ -25,19 +26,31 @@ def create_product(*, store, name, description, categories):
     return product
 
 
-def create_variant(*, product, size, purchase_price, sale_price):
+def create_variant(
+    *,
+    product,
+    size,
+    purchase_price,
+    sale_price,
+    invalidate_dashboard=True,
+):
     try:
         with transaction.atomic():
-            return ProductVariant.objects.create(
+            variant = ProductVariant.objects.create(
                 product=product,
                 size=size,
                 purchase_price=purchase_price,
-                sale_price=sale_price
+                sale_price=sale_price,
             )
     except IntegrityError as error:
         raise ValidationError({
             'size': VARIANT_SIZE_DUPLICATE_ERROR,
         }) from error
+
+    if invalidate_dashboard:
+        schedule_dashboard_cache_invalidation(product.store_id)
+
+    return variant
 
 
 def update_product(*, product, name, description, categories):
@@ -46,6 +59,9 @@ def update_product(*, product, name, description, categories):
     product.save(update_fields=['name', 'description', 'updated_at'])
     if categories is not None:
         product.category.set(categories)
+
+    schedule_dashboard_cache_invalidation(product.store_id)
+
     return product
 
 
@@ -81,4 +97,7 @@ def update_variant(*, variant, size, purchase_price, sale_price):
         raise ValidationError({
             'size': VARIANT_SIZE_DUPLICATE_ERROR,
         }) from error
+
+    schedule_dashboard_cache_invalidation(variant.product.store_id)
+
     return variant

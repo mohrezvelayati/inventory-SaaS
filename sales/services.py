@@ -6,6 +6,7 @@ from rest_framework.exceptions import ValidationError
 from sales.models import Sale, SaleItem
 from inventory.services import create_inventory_movement
 from catalog.models import ProductVariant
+from dashboard.cache import schedule_dashboard_cache_invalidation
 
 
 ### Create empty sale (Draft) ###
@@ -264,13 +265,16 @@ def complete_sale(*, sale, user):
             quantity=-item.quantity,
             movement_type='sale',
             user=user,
-            note=f"Sale #{sale.id}"
+            note=f"Sale #{sale.id}",
+            invalidate_dashboard=False,
         )
 
     sale.status = Sale.StatusChoices.COMPLETED
     sale.completed_at = timezone.now()
 
     sale.save(update_fields = ['status', 'completed_at'])
+
+    schedule_dashboard_cache_invalidation(sale.store_id)
 
     return sale
 
@@ -289,8 +293,12 @@ def cancel_sale(*, sale, user):
             quantity=item.quantity,
             movement_type='adjustment',
             user=user,
-            note=f"Cancellation of Sale #{sale.id}"
+            note=f"Cancellation of Sale #{sale.id}",
+            invalidate_dashboard=False,
         )
     sale.status = Sale.StatusChoices.CANCELLED
     sale.save(update_fields=['status'])
+
+    schedule_dashboard_cache_invalidation(sale.store_id)
+
     return sale

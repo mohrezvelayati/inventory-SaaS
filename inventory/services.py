@@ -4,11 +4,20 @@ from rest_framework.exceptions import ValidationError
 from inventory.models import InventoryMovement
 from catalog.models import Product, ProductVariant
 from catalog.services import create_variant
-
+from dashboard.cache import schedule_dashboard_cache_invalidation
 
 
 @transaction.atomic
-def create_inventory_movement(*, store, variant, quantity, movement_type, user, note=""):
+def create_inventory_movement(
+    *,
+    store,
+    variant,
+    quantity,
+    movement_type,
+    user,
+    note='',
+    invalidate_dashboard=True,
+):
     if movement_type not in InventoryMovement.MovementType.values:
         raise ValidationError({
             'movement_type': 'Invalid inventory movement type.'
@@ -62,6 +71,10 @@ def create_inventory_movement(*, store, variant, quantity, movement_type, user, 
         note = note,
         created_by = user, 
     )
+
+    if invalidate_dashboard:
+        schedule_dashboard_cache_invalidation(store.id)
+
     return movement
 
 
@@ -114,6 +127,7 @@ def create_batch_purchase(
                 size=size,
                 purchase_price=purchase_price,
                 sale_price=sale_price,
+                invalidate_dashboard=False,
             )
             variants_by_size[size] = variant
 
@@ -124,7 +138,10 @@ def create_batch_purchase(
             movement_type=InventoryMovement.MovementType.PURCHASE,
             user=user,
             note=note,
+            invalidate_dashboard=False,
         )
         movements.append(movement)
+
+    schedule_dashboard_cache_invalidation(store.id)
 
     return movements

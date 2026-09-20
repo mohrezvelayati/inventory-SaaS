@@ -1,7 +1,7 @@
 # Inventory SaaS — AI Project Handoff
 
-Last verified: 2026-08-23  
-Backend repository: `mohrezvelayati/inventory-SaaS`  
+Last verified: 2026-09-20
+Backend repository: `mohrezvelayati/inventory-SaaS`
 Frontend repository: `mohrezvelayati/inventory-saas-frontend`
 
 ## 1. Purpose of this document
@@ -99,10 +99,11 @@ Typical local paths used during development:
 - Django 5.2.17 LTS
 - Django REST Framework 3.16.1
 - PostgreSQL
+- Redis 7.4 for the dashboard response cache
 - SimpleJWT
 - drf-spectacular / OpenAPI / Swagger
-- Latest verified backend commit while writing this file: `421ea5c`
-- Complete test suite at last verification: 115 passing tests
+- Current feature branch: `feature/redis-celery-notifications`
+- Latest committed backend base before the cache change: `17098cf`
 
 ### Frontend
 
@@ -459,6 +460,10 @@ non-integer age bounds, or `age_min` greater than `age_max`) return 400.
 Dashboard/report dates use `YYYY-MM-DD`. Report range is limited by
 `DASHBOARD_MAX_DATE_RANGE_DAYS` (currently 90).
 
+Only the summary endpoint at `GET /dashboard/` is cached. The analytical
+`GET /dashboard/reports/` endpoint is intentionally uncached because it accepts
+larger arbitrary ranges and is used less frequently.
+
 OpenAPI and admin endpoints:
 
 ```text
@@ -565,6 +570,15 @@ still authoritative.
   join duplication.
 - Reports include revenue, discounts, historical unit cost, gross profit,
   average order, daily series, channel breakdown, products, and inventory value.
+- Dashboard summary cache keys include the store, requested date range, and a
+  per-store version, so one tenant or date range cannot receive another's data.
+- Cached dashboard summaries expire after 60 seconds by default.
+- Inventory changes, variant/product changes, completed or cancelled sales, and
+  wanted-demand changes increment the store cache version only after the
+  surrounding database transaction commits.
+- Redis failures are fail-open: the dashboard is calculated from PostgreSQL and
+  business writes still succeed. Redis is an optimization, not a source of
+  truth.
 
 ## 10. Frontend routes and access rules
 
@@ -623,6 +637,8 @@ changing the visual language.
 ### Backend
 
 Prerequisites: Python 3.12, PostgreSQL, and permission to create test databases.
+Redis is optional for direct local development; without `CACHE_URL`, Django
+uses a process-local memory cache.
 
 ```bash
 cd /Users/mohrez/code/inventory-SaaS
@@ -634,8 +650,21 @@ python manage.py runserver
 ```
 
 Settings are split into base/development/test/production modules and production
-secrets are environment-only. Docker Compose provides a repeatable local
-PostgreSQL/backend environment; Render uses the production settings module.
+secrets are environment-only. Set `CACHE_URL=redis://localhost:6380/1` to use
+the Compose Redis service from a locally running Django process. The dashboard
+TTL is configurable with `DASHBOARD_CACHE_TTL_SECONDS` and defaults to 60.
+
+Docker Compose provides PostgreSQL, Redis, and the backend. Redis is published
+on host port 6380 to avoid colliding with a system Redis on 6379:
+
+```bash
+docker compose up -d db redis
+docker compose exec redis redis-cli ping
+```
+
+Render uses the production settings module. A shared production cache requires
+provisioning Redis and supplying `CACHE_URL`; otherwise each backend process
+falls back to its own local-memory cache.
 
 ### Frontend
 
@@ -675,9 +704,9 @@ npm run lint
 npm run build
 ```
 
-At last verification:
+At last backend verification on 2026-09-20:
 
-- Django: 115/115 tests passed
+- Django: 138/138 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -739,6 +768,11 @@ High-priority blockers:
 - DRF auth throttles and PostgreSQL-backed OTP rate limits exist; invitation
   preview/accept endpoints still need dedicated abuse-rate scopes.
 - No automated SMS/email invitation delivery.
+- Redis-backed caching is optional. Production still needs a managed Redis
+  service and `CACHE_URL` before multiple backend processes can share cached
+  dashboard responses.
+- Celery, Celery Beat, Telegram delivery, retries, and notification idempotency
+  are not implemented yet.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
@@ -755,18 +789,18 @@ High-priority blockers:
 
 Recommended next engineering phase:
 
-1. Commit and push the invitation frontend after review.
-2. Monitor the shared demo rate limits and dataset size after publishing the
-   one-click portfolio entry.
-3. Run the complete manager invite -> employee registration -> sale workflow
-   manually across both repositories.
-4. Move configuration and secrets to environment variables and split settings.
-5. Add CI running PostgreSQL-backed Django tests plus frontend test/lint/build.
-6. Add auth hardening: password validation consistency, logout/blacklist,
-   throttling, and invitation endpoint rate limits.
-7. Add staging deployment, logs, monitoring, backups, and restore procedures.
-8. Perform browser-level E2E testing against a real backend for manager invite
-   -> seller registration -> dashboard.
+1. Finish and commit the Redis dashboard-cache change after the complete
+   backend verification suite passes.
+2. Add the smallest Celery foundation with Redis as broker; do not add
+   `django-celery-results`, Flower, or database-backed schedules yet.
+3. Add a small persistent notification event/outbox record for idempotent,
+   retryable sale-completed delivery.
+4. Enqueue the event with `transaction.on_commit()` and send a Telegram message
+   from a Celery worker through a separate Telegram service.
+5. Add one Celery Beat daily sales/low-stock digest after immediate sale
+   notification is stable.
+6. Keep dashboard caching and notification delivery independent: Redis outages
+   may degrade cache/queue behavior but must not corrupt inventory or sales.
 
 ## 15. Decision history
 
@@ -789,6 +823,9 @@ Important completed phases, based on Git history and current code:
   including permission-aware UI and retry after partial two-request failure
 - Guarded one-click demo login plus an atomic service-backed synthetic tenant
   rebuild covering every implemented product workflow
+- Atomic sale completion timestamps used by dashboard and financial reports
+- Tenant/date-scoped dashboard response caching with post-commit version
+  invalidation and database fallback when Redis is unavailable
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,
@@ -819,6 +856,7 @@ current Git history, and passing tests over stale roadmap text.
 | `a7148a7` | Added current-user profile and manager store-settings APIs |
 | `1ff9a01` | Added financial/inventory reports with historical unit-cost snapshots |
 | `421ea5c` | Added secure store invitations, default-permission backfill, and smoke coverage |
+| `17098cf` | Recorded atomic sale completion timestamps and used them in reporting |
 
 ### How the engineering approach evolved
 
@@ -834,6 +872,8 @@ sequence was deliberate:
    item editing, draft deletion, search, profile/settings, and reports.
 7. Replace direct employee lookup as the primary onboarding UX with secure
    phone-bound invitations.
+8. Introduce Redis first for one measured, read-heavy dashboard use case while
+   keeping PostgreSQL authoritative and invalidation transaction-aware.
 
 Future work should continue this pattern: let a concrete workflow expose the
 smallest missing contract, implement it end to end, test the invariant, and

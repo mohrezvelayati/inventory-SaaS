@@ -4,6 +4,11 @@ from decimal import Decimal
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
+from unittest.mock import patch
+
+from django.core.cache import cache
+from django.db import transaction
+from redis.exceptions import RedisError
 
 from dashboard.services.inventory import get_inventory_overview
 from dashboard.services.sales import get_sales_overview
@@ -100,6 +105,8 @@ class DashboardApiTests(TestCase):
         self.user = create_user()
         self.store, self.membership = create_store(self.user)
         self.client = authenticated_client(self.user)
+        cache.clear()
+
 
     def test_dashboard_response_matches_documented_contract(self):
         response = self.client.get('/api/v1/dashboard/')
@@ -209,3 +216,88 @@ class DashboardApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['daily']), 30)
         self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+    def test_dashboard_reuses_cached_response(self):
+        with patch(
+            'dashboard.api.views.get_sales_overview',
+            wraps=get_sales_overview,
+        ) as sales_overview:
+            first = self.client.get('/api/v1/dashboard/')
+            second = self.client.get('/api/v1/dashboard/')
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(first.data, second.data)
+        self.assertEqual(sales_overview.call_count, 1)
+
+    def test_dashboard_cache_is_isolated_per_store(self):
+        other_user = create_user()
+        create_store(other_user)
+        other_client = authenticated_client(other_user)
+
+        with patch(
+            'dashboard.api.views.get_sales_overview',
+            wraps=get_sales_overview,
+        ) as sales_overview:
+            self.client.get('/api/v1/dashboard/')
+            other_client.get('/api/v1/dashboard/')
+
+        self.assertEqual(sales_overview.call_count, 2)
+
+    def test_dashboard_falls_back_to_database_when_cache_fails(self):
+        with patch(
+            'dashboard.cache.cache.get_or_set',
+            side_effect=RedisError('Redis unavailable'),
+        ):
+            response = self.client.get('/api/v1/dashboard/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['inventory']['total_stock'], 0)
+
+    def test_inventory_change_invalidates_dashboard_after_commit(self):
+        product = create_product(self.store)
+        variant = create_variant(product, current_stock=0)
+
+        first = self.client.get('/api/v1/dashboard/')
+        self.assertEqual(first.data['inventory']['total_stock'], 0)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            movement_response = self.client.post(
+                '/api/v1/inventory/movements/create/',
+                {
+                    'variant': variant.id,
+                    'quantity': 3,
+                    'movement_type': 'purchase',
+                },
+                format='json',
+            )
+
+        self.assertEqual(
+            movement_response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        second = self.client.get('/api/v1/dashboard/')
+
+        self.assertEqual(
+            second.data['inventory']['total_stock'],
+            3,
+        )
+
+    def test_rolled_back_transaction_does_not_invalidate_dashboard(self):
+        from dashboard.cache import (
+            schedule_dashboard_cache_invalidation,
+        )
+
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            try:
+                with transaction.atomic():
+                    schedule_dashboard_cache_invalidation(
+                        self.store.id
+                    )
+                    raise ValueError('rollback')
+            except ValueError:
+                pass
+
+        self.assertEqual(callbacks, [])

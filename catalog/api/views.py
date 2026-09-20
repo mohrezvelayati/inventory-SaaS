@@ -25,8 +25,8 @@ from catalog.services import (
     update_product_sale_price,
     update_variant,
 )
+from dashboard.cache import schedule_dashboard_cache_invalidation
 from stores.services import get_current_membership, MembershipResolutionError
-
 
 
 class CategoryListCreateView(generics.ListCreateAPIView):
@@ -192,6 +192,11 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
         serializer.instance = product
 
+    def perform_destroy(self, instance):
+        store_id = instance.store_id
+        instance.delete()
+        schedule_dashboard_cache_invalidation(store_id)
+
 
 class ProductSalePriceUpdateView(generics.GenericAPIView):
     serializer_class = ProductSalePriceUpdateSerializer
@@ -300,6 +305,11 @@ class ProductVariantDetailView(generics.RetrieveUpdateDestroyAPIView):
             sale_price=serializer.validated_data['sale_price'],
         )
         serializer.instance = variant
+
+    def perform_destroy(self, instance):
+        store_id = instance.product.store_id
+        instance.delete()
+        schedule_dashboard_cache_invalidation(store_id)
 
 
 
