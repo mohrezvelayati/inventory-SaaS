@@ -100,10 +100,11 @@ Typical local paths used during development:
 - Django REST Framework 3.16.1
 - PostgreSQL
 - Redis 7.4 for the dashboard response cache
+- Celery 5.6.3 with Redis as the message broker
 - SimpleJWT
 - drf-spectacular / OpenAPI / Swagger
 - Current feature branch: `feature/redis-celery-notifications`
-- Latest committed backend base before the cache change: `17098cf`
+- Latest committed backend base before the Celery change: `a3ac572`
 
 ### Frontend
 
@@ -654,13 +655,20 @@ secrets are environment-only. Set `CACHE_URL=redis://localhost:6380/1` to use
 the Compose Redis service from a locally running Django process. The dashboard
 TTL is configurable with `DASHBOARD_CACHE_TTL_SECONDS` and defaults to 60.
 
-Docker Compose provides PostgreSQL, Redis, and the backend. Redis is published
-on host port 6380 to avoid colliding with a system Redis on 6379:
+Docker Compose provides PostgreSQL, Redis, the backend, and a separate Celery
+worker. Redis is published on host port 6380 to avoid colliding with a system
+Redis on 6379:
 
 ```bash
-docker compose up -d db redis
+docker compose up -d --build db redis backend worker
 docker compose exec redis redis-cli ping
+docker compose exec worker celery -A config inspect ping
 ```
+
+Redis database `0` is reserved for the Celery broker and database `1` for the
+Django dashboard cache. The worker has `RUN_MIGRATIONS=false`; migrations remain
+the backend/release process's responsibility. Tests run Celery tasks eagerly,
+so the automated suite does not require a live broker.
 
 Render uses the production settings module. A shared production cache requires
 provisioning Redis and supplying `CACHE_URL`; otherwise each backend process
@@ -706,7 +714,7 @@ npm run build
 
 At last backend verification on 2026-09-20:
 
-- Django: 138/138 tests passed
+- Django: 140/140 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -771,8 +779,10 @@ High-priority blockers:
 - Redis-backed caching is optional. Production still needs a managed Redis
   service and `CACHE_URL` before multiple backend processes can share cached
   dashboard responses.
-- Celery, Celery Beat, Telegram delivery, retries, and notification idempotency
-  are not implemented yet.
+- The Celery worker foundation exists, but Celery Beat, Telegram delivery,
+  retries, persistent notification events, and idempotency are not implemented
+  yet. No result backend is configured because task state will live in the
+  domain notification-event record instead of storing every task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
@@ -789,17 +799,15 @@ High-priority blockers:
 
 Recommended next engineering phase:
 
-1. Finish and commit the Redis dashboard-cache change after the complete
-   backend verification suite passes.
-2. Add the smallest Celery foundation with Redis as broker; do not add
-   `django-celery-results`, Flower, or database-backed schedules yet.
-3. Add a small persistent notification event/outbox record for idempotent,
+1. Add a small persistent notification event/outbox record for idempotent,
    retryable sale-completed delivery.
-4. Enqueue the event with `transaction.on_commit()` and send a Telegram message
+2. Enqueue the event with `transaction.on_commit()` and send a Telegram message
    from a Celery worker through a separate Telegram service.
-5. Add one Celery Beat daily sales/low-stock digest after immediate sale
+3. Add transient-error retry behavior and prove duplicate task execution cannot
+   send a successfully delivered event twice.
+4. Add one Celery Beat daily sales/low-stock digest after immediate sale
    notification is stable.
-6. Keep dashboard caching and notification delivery independent: Redis outages
+5. Keep dashboard caching and notification delivery independent: Redis outages
    may degrade cache/queue behavior but must not corrupt inventory or sales.
 
 ## 15. Decision history
@@ -826,6 +834,8 @@ Important completed phases, based on Git history and current code:
 - Atomic sale completion timestamps used by dashboard and financial reports
 - Tenant/date-scoped dashboard response caching with post-commit version
   invalidation and database fallback when Redis is unavailable
+- Celery worker foundation using Redis DB 0 as broker, eager isolated tests, and
+  a real broker-to-worker health-check task
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,
@@ -874,6 +884,8 @@ sequence was deliberate:
    phone-bound invitations.
 8. Introduce Redis first for one measured, read-heavy dashboard use case while
    keeping PostgreSQL authoritative and invalidation transaction-aware.
+9. Add Celery as a separately deployable worker foundation before introducing
+   notification domain models or external Telegram side effects.
 
 Future work should continue this pattern: let a concrete workflow expose the
 smallest missing contract, implement it end to end, test the invariant, and

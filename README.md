@@ -72,6 +72,7 @@ Register owner
 - Docker / Docker Compose
 - GitHub Actions and Render, with optional Sentry integration
 - Redis-backed dashboard caching
+- Celery 5.6 with Redis as the message broker
 
 Dependencies are pinned in [`requirements.txt`](requirements.txt).
 
@@ -227,10 +228,20 @@ The command uses the existing catalog, inventory, sales, membership,
 invitation, and wanted services so cached stock and audit history remain
 consistent. It refuses to run unless demo mode is explicitly enabled.
 
-Alternatively, start Django and PostgreSQL together:
+Alternatively, start PostgreSQL, Redis, Django, and the Celery worker together:
 
 ```bash
-docker compose up --build
+docker compose up -d --build db redis backend worker
+```
+
+Redis database `0` is the Celery broker and database `1` stores dashboard
+cache entries. The worker consumes background jobs independently from the web
+process. Celery Beat and business notification tasks are not implemented yet.
+
+Confirm the worker is reachable with:
+
+```bash
+docker compose exec worker celery -A config inspect ping
 ```
 
 Configuration is environment-based. Copy `.env.example` to `.env` for local
@@ -246,9 +257,9 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-08-31 with Python 3.12 and Django 5.2:
+Verified on 2026-09-20 with Python 3.12 and Django 5.2:
 
-- 126 Django tests passed against PostgreSQL
+- 140 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors
