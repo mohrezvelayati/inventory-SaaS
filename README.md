@@ -248,6 +248,17 @@ Confirm the worker is reachable with:
 docker compose exec worker celery -A config inspect ping
 ```
 
+If a broker outage leaves notification events pending, queue the oldest 100
+again with:
+
+```bash
+python manage.py retry_notifications
+```
+
+Use `--include-failed` only after checking provider logs, because a failed
+client response does not always prove that the provider rejected the email.
+Use `--limit=N` to control the batch size.
+
 Configuration is environment-based. Copy `.env.example` to `.env` for local
 overrides and never commit real secrets.
 
@@ -261,9 +272,9 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-09-20 with Python 3.12 and Django 5.2:
+Verified on 2026-09-23 with Python 3.12 and Django 5.2:
 
-- 155 Django tests passed against PostgreSQL
+- 159 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors
@@ -275,7 +286,7 @@ purchases and checkout, concurrent demand increments, sales lifecycle,
 dashboard/report correctness, schema paths, and the complete
 owner-registration-to-employee-invitation smoke workflow. Notification tests
 also cover commit-safe enqueueing, broker failure isolation, delivery state,
-deduplication, and retry behavior.
+deduplication, retry behavior, and bounded manual recovery.
 
 ## Deployment and Operations
 

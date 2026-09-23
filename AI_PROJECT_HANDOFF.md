@@ -710,7 +710,10 @@ persistent event and `sent` check prevent normal duplicate task execution from
 resending, but there is still a small unavoidable SMTP gap: a worker crash
 after the provider accepts an email and before the database marks it sent can
 produce a duplicate on retry. Automatic replay of pending rows left by a
-broker outage is not implemented yet.
+broker outage is not implemented, but operators can manually queue a bounded
+batch with `python manage.py retry_notifications`. It selects pending events by
+default; `--include-failed` is deliberately explicit because provider-side
+acceptance can be ambiguous after a connection error.
 
 Render uses the production settings module. A shared production cache requires
 provisioning Redis and supplying `CACHE_URL`; otherwise each backend process
@@ -754,9 +757,9 @@ npm run lint
 npm run build
 ```
 
-At last backend verification on 2026-09-20:
+At last backend verification on 2026-09-23:
 
-- Django: 155/155 tests passed
+- Django: 159/159 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -823,10 +826,11 @@ High-priority blockers:
   dashboard responses.
 - The Celery worker, persistent NotificationEvent outbox, per-store destination
   email, post-commit task enqueueing, bounded retry orchestration, and
-  plain-text Django email service exist. Production SMTP credentials, automatic
-  replay of pending events after a broker outage, and Celery Beat are not
-  implemented yet. No result backend is configured because delivery state
-  lives in the outbox record instead of storing every task result.
+  plain-text Django email service exist. A bounded management command manually
+  recovers pending/failed events after an outage. Production SMTP credentials,
+  automatic scheduled replay, and Celery Beat are not implemented yet. No
+  result backend is configured because delivery state lives in the outbox
+  record instead of storing every task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
@@ -845,9 +849,9 @@ Recommended next engineering phase:
 
 1. Configure a real SMTP provider through environment variables in staging and
    verify delivery without committing credentials.
-2. Add a small replay command for old pending events so a temporary broker
-   outage can be recovered without manually publishing task IDs.
-3. Add one Celery Beat daily sales/low-stock digest after immediate sale
+2. Deploy Redis and the Celery worker beside the production web service and run
+   the notification recovery command once as an operational drill.
+3. Add one Celery Beat daily sales/low-stock digest only after immediate sale
    notification is stable.
 4. Keep dashboard caching and notification delivery independent: Redis outages
    may degrade cache/queue behavior but must not corrupt inventory or sales.
@@ -884,6 +888,8 @@ Important completed phases, based on Git history and current code:
   backends, and a tested plain-text sale-completion email service
 - Post-commit Celery email delivery with persistent attempt state, duplicate
   suppression for sent events, and bounded retry for transient SMTP failures
+- Bounded manual recovery for pending notification events, with failed-event
+  replay requiring an explicit operator choice
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,

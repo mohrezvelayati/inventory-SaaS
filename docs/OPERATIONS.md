@@ -21,6 +21,20 @@
 - One-click login does not depend on the public username or password, so a
   visitor profile edit cannot disable the demo entry button.
 
+## Notification recovery
+
+- A Redis outage after sale commit can leave a durable notification event in
+  `pending`. Requeue up to the oldest 100 pending events with
+  `python manage.py retry_notifications` after the broker and worker recover.
+- Pass `--limit=N` to use a smaller operational batch.
+- `sent` events are never selected. Failed events require the explicit
+  `--include-failed` flag because an SMTP connection error does not always
+  prove that the provider rejected the email; check provider logs first to
+  reduce duplicate-delivery risk.
+- The command exits non-zero on a broker error and reports how many earlier
+  events were already queued. It does not alter delivery status itself; the
+  worker records the next real attempt.
+
 ## Backup and restore
 
 Do not treat a backup as valid until it has been restored.
