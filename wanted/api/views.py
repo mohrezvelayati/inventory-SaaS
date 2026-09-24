@@ -10,6 +10,7 @@ from wanted.models import WantedProduct
 from wanted.permissions import CanManageWanted
 from wanted.services import create_wanted
 from stores.services import get_current_membership, MembershipResolutionError
+from dashboard.cache import schedule_dashboard_cache_invalidation
 
 
 
@@ -25,6 +26,16 @@ class WantedProductDetailView(generics.RetrieveUpdateDestroyAPIView):
             raise Http404('Store Not Found') from error
         return WantedProduct.objects.filter(store=membership.store)
 
+    def perform_update(self, serializer):
+        wanted_product = serializer.save()
+        schedule_dashboard_cache_invalidation(
+            wanted_product.store_id
+        )
+
+    def perform_destroy(self, instance):
+        store_id = instance.store_id
+        instance.delete()
+        schedule_dashboard_cache_invalidation(store_id)
 
 
 class WantedListCreateView(generics.ListCreateAPIView):

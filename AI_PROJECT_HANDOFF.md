@@ -1,7 +1,7 @@
 # Inventory SaaS — AI Project Handoff
 
-Last verified: 2026-08-23  
-Backend repository: `mohrezvelayati/inventory-SaaS`  
+Last verified: 2026-09-20
+Backend repository: `mohrezvelayati/inventory-SaaS`
 Frontend repository: `mohrezvelayati/inventory-saas-frontend`
 
 ## 1. Purpose of this document
@@ -99,10 +99,12 @@ Typical local paths used during development:
 - Django 5.2.17 LTS
 - Django REST Framework 3.16.1
 - PostgreSQL
+- Redis 7.4 for the dashboard response cache
+- Celery 5.6.3 with Redis as the message broker
 - SimpleJWT
 - drf-spectacular / OpenAPI / Swagger
-- Latest verified backend commit while writing this file: `421ea5c`
-- Complete test suite at last verification: 115 passing tests
+- Current feature branch: `feature/redis-celery-notifications`
+- Latest committed backend base before the Celery change: `a3ac572`
 
 ### Frontend
 
@@ -136,6 +138,7 @@ user unless proven otherwise.
 | `inventory` | Stock balance mutation and movement audit trail |
 | `customers` | Tenant-scoped customer CRUD |
 | `sales` | Draft invoices, items, checkout, cancellation |
+| `notifications` | Persistent outbox events and external notification delivery |
 | `wanted` | Unavailable-product demand and customer request audit |
 | `dashboard` | Dashboard metrics and analytical reports |
 | `tests` | Shared factories, integration, tenant, concurrency, schema, and E2E tests |
@@ -186,6 +189,7 @@ Store
   ├── Product ── ProductVariant ── InventoryMovement
   ├── Customer
   ├── Sale ── SaleItem
+  │      └── NotificationEvent
   └── WantedProduct ── WantedCustomerRequest
 ```
 
@@ -204,6 +208,9 @@ Important constraints:
 - Invitation token hashes are globally unique.
 - A store can have only one pending invitation for the same phone at a time.
 - Invitation role has a database check limiting it to `seller` or `admin`.
+- A Sale has at most one NotificationEvent for each event type.
+- Store `notification_email` is optional. An empty value disables outbound sale
+  email events for that store.
 
 The central tenant resolver is `stores.services.get_current_membership(user)`.
 It deliberately uses `.get()`, never `.first()`. No active-store selector exists
@@ -383,6 +390,10 @@ plain array.
 | POST | `/stores/invitations/{token}/register/` | Public invitation registration, returns JWT |
 | POST | `/stores/invitations/{token}/accept/` | Authenticated existing-user acceptance |
 
+Store responses include optional `notification_email`. Only the manager-only
+store settings endpoint can update it; an empty string disables sale email
+events without affecting checkout.
+
 ### Catalog
 
 | Method | Path |
@@ -432,6 +443,14 @@ History supports `product_id`, `variant_id`, `created_by_id`,
 Sale list supports `search` by customer/id, `status`, `channel`, `date_from`,
 and `date_to`.
 
+Sale responses include `completed_at`. It is `null` for drafts and is set
+atomically when checkout succeeds.
+
+Completing a sale also persists a `sale_completed` NotificationEvent in the
+same database transaction when the store has configured a notification email.
+The recipient and sale summary are captured in the JSON payload. This is an
+internal outbox record; no notification API is exposed.
+
 ### Customers, wanted demand, dashboard, reports
 
 | Method | Path |
@@ -455,6 +474,10 @@ non-integer age bounds, or `age_min` greater than `age_max`) return 400.
 
 Dashboard/report dates use `YYYY-MM-DD`. Report range is limited by
 `DASHBOARD_MAX_DATE_RANGE_DAYS` (currently 90).
+
+Only the summary endpoint at `GET /dashboard/` is cached. The analytical
+`GET /dashboard/reports/` endpoint is intentionally uncached because it accepts
+larger arbitrary ranges and is used less frequently.
 
 OpenAPI and admin endpoints:
 
@@ -542,6 +565,23 @@ still authoritative.
 - Checkout locks the sale and variants in deterministic ID order, aggregates
   duplicate variant requirements, validates stock, writes negative movements,
   and marks the sale completed atomically.
+- Completed sales record `completed_at`; dashboards and financial reports use
+  the completion date rather than the draft creation date.
+- Successful checkout creates a pending `sale_completed` NotificationEvent in
+  the same transaction when `Store.notification_email` is configured. If
+  checkout rolls back, stock, Sale state, and the event all roll back together.
+- The event ID is enqueued with `transaction.on_commit()`; model instances are
+  never passed to Celery. A broker error after commit is logged and does not
+  undo the completed sale or its pending outbox row.
+- A store without a notification email completes sales normally without
+  creating undeliverable pending events.
+- Notification event payloads are JSON snapshots of the completed sale.
+  `get_or_create()` plus a database uniqueness constraint on
+  `(event_type, sale)` prevents duplicate outbox rows.
+- The worker locks the event row, skips an event already marked `sent`, records
+  every attempt, and persists either `sent`/`sent_at` or `failed`/`last_error`.
+  Temporary SMTP/network errors are retried up to three times with bounded
+  exponential delays of 10, 20, and 40 seconds.
 - Cancellation is allowed only from completed state, restores stock through
   positive adjustments, and marks the sale cancelled.
 
@@ -560,6 +600,15 @@ still authoritative.
   join duplication.
 - Reports include revenue, discounts, historical unit cost, gross profit,
   average order, daily series, channel breakdown, products, and inventory value.
+- Dashboard summary cache keys include the store, requested date range, and a
+  per-store version, so one tenant or date range cannot receive another's data.
+- Cached dashboard summaries expire after 60 seconds by default.
+- Inventory changes, variant/product changes, completed or cancelled sales, and
+  wanted-demand changes increment the store cache version only after the
+  surrounding database transaction commits.
+- Redis failures are fail-open: the dashboard is calculated from PostgreSQL and
+  business writes still succeed. Redis is an optimization, not a source of
+  truth.
 
 ## 10. Frontend routes and access rules
 
@@ -618,6 +667,8 @@ changing the visual language.
 ### Backend
 
 Prerequisites: Python 3.12, PostgreSQL, and permission to create test databases.
+Redis is optional for direct local development; without `CACHE_URL`, Django
+uses a process-local memory cache.
 
 ```bash
 cd /Users/mohrez/code/inventory-SaaS
@@ -629,8 +680,44 @@ python manage.py runserver
 ```
 
 Settings are split into base/development/test/production modules and production
-secrets are environment-only. Docker Compose provides a repeatable local
-PostgreSQL/backend environment; Render uses the production settings module.
+secrets are environment-only. Set `CACHE_URL=redis://localhost:6380/1` to use
+the Compose Redis service from a locally running Django process. The dashboard
+TTL is configurable with `DASHBOARD_CACHE_TTL_SECONDS` and defaults to 60.
+
+Docker Compose provides PostgreSQL, Redis, the backend, and a separate Celery
+worker. Redis is published on host port 6380 to avoid colliding with a system
+Redis on 6379:
+
+```bash
+docker compose up -d --build db redis backend worker
+docker compose exec redis redis-cli ping
+docker compose exec worker celery -A config inspect ping
+```
+
+Redis database `0` is reserved for the Celery broker and database `1` for the
+Django dashboard cache. The worker has `RUN_MIGRATIONS=false`; migrations remain
+the backend/release process's responsibility. Tests run Celery tasks eagerly,
+so the automated suite does not require a live broker.
+
+Development email defaults to Django's console backend and tests use its
+in-memory backend. Production delivery requires selecting the SMTP backend and
+supplying host, port, credentials, TLS choice, timeout, and default sender via
+environment variables. No email-provider SDK or credential is stored in the
+repository.
+
+Sale-completion email delivery uses at-least-once queue semantics. The
+persistent event and `sent` check prevent normal duplicate task execution from
+resending, but there is still a small unavoidable SMTP gap: a worker crash
+after the provider accepts an email and before the database marks it sent can
+produce a duplicate on retry. Automatic replay of pending rows left by a
+broker outage is not implemented, but operators can manually queue a bounded
+batch with `python manage.py retry_notifications`. It selects pending events by
+default; `--include-failed` is deliberately explicit because provider-side
+acceptance can be ambiguous after a connection error.
+
+Render uses the production settings module. A shared production cache requires
+provisioning Redis and supplying `CACHE_URL`; otherwise each backend process
+falls back to its own local-memory cache.
 
 ### Frontend
 
@@ -670,9 +757,9 @@ npm run lint
 npm run build
 ```
 
-At last verification:
+At last backend verification on 2026-09-23:
 
-- Django: 115/115 tests passed
+- Django: 159/159 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -734,6 +821,16 @@ High-priority blockers:
 - DRF auth throttles and PostgreSQL-backed OTP rate limits exist; invitation
   preview/accept endpoints still need dedicated abuse-rate scopes.
 - No automated SMS/email invitation delivery.
+- Redis-backed caching is optional. Production still needs a managed Redis
+  service and `CACHE_URL` before multiple backend processes can share cached
+  dashboard responses.
+- The Celery worker, persistent NotificationEvent outbox, per-store destination
+  email, post-commit task enqueueing, bounded retry orchestration, and
+  plain-text Django email service exist. A bounded management command manually
+  recovers pending/failed events after an outage. Production SMTP credentials,
+  automatic scheduled replay, and Celery Beat are not implemented yet. No
+  result backend is configured because delivery state lives in the outbox
+  record instead of storing every task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
 - `WantedCustomerRequest` is stored as an audit trail but does not yet have a
@@ -750,18 +847,14 @@ High-priority blockers:
 
 Recommended next engineering phase:
 
-1. Commit and push the invitation frontend after review.
-2. Monitor the shared demo rate limits and dataset size after publishing the
-   one-click portfolio entry.
-3. Run the complete manager invite -> employee registration -> sale workflow
-   manually across both repositories.
-4. Move configuration and secrets to environment variables and split settings.
-5. Add CI running PostgreSQL-backed Django tests plus frontend test/lint/build.
-6. Add auth hardening: password validation consistency, logout/blacklist,
-   throttling, and invitation endpoint rate limits.
-7. Add staging deployment, logs, monitoring, backups, and restore procedures.
-8. Perform browser-level E2E testing against a real backend for manager invite
-   -> seller registration -> dashboard.
+1. Configure a real SMTP provider through environment variables in staging and
+   verify delivery without committing credentials.
+2. Deploy Redis and the Celery worker beside the production web service and run
+   the notification recovery command once as an operational drill.
+3. Add one Celery Beat daily sales/low-stock digest only after immediate sale
+   notification is stable.
+4. Keep dashboard caching and notification delivery independent: Redis outages
+   may degrade cache/queue behavior but must not corrupt inventory or sales.
 
 ## 15. Decision history
 
@@ -784,6 +877,19 @@ Important completed phases, based on Git history and current code:
   including permission-aware UI and retry after partial two-request failure
 - Guarded one-click demo login plus an atomic service-backed synthetic tenant
   rebuild covering every implemented product workflow
+- Atomic sale completion timestamps used by dashboard and financial reports
+- Tenant/date-scoped dashboard response caching with post-commit version
+  invalidation and database fallback when Redis is unavailable
+- Celery worker foundation using Redis DB 0 as broker, eager isolated tests, and
+  a real broker-to-worker health-check task
+- Transactional sale-completed NotificationEvent outbox with a JSON snapshot,
+  pending/sent/failed state, retry metadata, and database-level deduplication
+- Optional per-store notification email, environment-driven Django email
+  backends, and a tested plain-text sale-completion email service
+- Post-commit Celery email delivery with persistent attempt state, duplicate
+  suppression for sent events, and bounded retry for transient SMTP failures
+- Bounded manual recovery for pending notification events, with failed-event
+  replay requiring an explicit operator choice
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,
@@ -814,6 +920,7 @@ current Git history, and passing tests over stale roadmap text.
 | `a7148a7` | Added current-user profile and manager store-settings APIs |
 | `1ff9a01` | Added financial/inventory reports with historical unit-cost snapshots |
 | `421ea5c` | Added secure store invitations, default-permission backfill, and smoke coverage |
+| `17098cf` | Recorded atomic sale completion timestamps and used them in reporting |
 
 ### How the engineering approach evolved
 
@@ -829,6 +936,12 @@ sequence was deliberate:
    item editing, draft deletion, search, profile/settings, and reports.
 7. Replace direct employee lookup as the primary onboarding UX with secure
    phone-bound invitations.
+8. Introduce Redis first for one measured, read-heavy dashboard use case while
+   keeping PostgreSQL authoritative and invalidation transaction-aware.
+9. Add Celery as a separately deployable worker foundation before introducing
+   notification domain models or external email side effects.
+10. Choose standard SMTP email over Telegram for store notifications, keeping
+    provider credentials in environment variables and avoiding vendor SDKs.
 
 Future work should continue this pattern: let a concrete workflow expose the
 smallest missing contract, implement it end to end, test the invariant, and

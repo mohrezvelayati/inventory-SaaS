@@ -15,6 +15,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "6380:6379"
+
   backend:
     build: .
     environment:
@@ -22,12 +32,51 @@ services:
       SECRET_KEY: local-compose-only-secret
       DATABASE_URL: postgresql://inventory:inventory@db:5432/inventory_saas
       RUN_MIGRATIONS: "true"
+      CACHE_URL: redis://redis:6379/1
+      DASHBOARD_CACHE_TTL_SECONDS: "60"
+      CELERY_BROKER_URL: redis://redis:6379/0
     command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - .:/app
+
+  worker:
+    build: .
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      SECRET_KEY: local-compose-only-secret
+      DATABASE_URL: postgresql://inventory:inventory@db:5432/inventory_saas
+      CACHE_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      RUN_MIGRATIONS: "false"
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
+      EMAIL_TIMEOUT: ${EMAIL_TIMEOUT:-10}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-notifications@example.com}
+    command:
+      [
+        "celery",
+        "-A",
+        "config",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency=2",
+      ]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - .:/app
 

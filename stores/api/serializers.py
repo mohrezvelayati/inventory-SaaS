@@ -15,7 +15,13 @@ from stores.models import (
 class StoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = Store
-        fields = ['id', 'name', 'created_at', 'updated_at']
+        fields = [
+            'id',
+            'name',
+            'notification_email',
+            'created_at',
+            'updated_at',
+        ]
 
     def validate(self, attrs):
         user = self.context['request'].user

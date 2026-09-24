@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "catalog",
     "inventory",
     "sales",
+    "notifications.apps.NotificationsConfig",
     "customers",
     "wanted",
     "dashboard",
@@ -173,3 +174,59 @@ SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 APP_ENVIRONMENT = os.getenv("APP_ENVIRONMENT", "development")
 APP_RELEASE = os.getenv("APP_RELEASE") or os.getenv("RENDER_GIT_COMMIT", "local")
 DEMO_MODE_ENABLED = env_bool("DEMO_MODE_ENABLED", False)
+
+
+CACHE_URL = os.getenv('CACHE_URL')
+
+if CACHE_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': CACHE_URL,
+            'KEY_PREFIX': 'inventory-saas',
+            'OPTIONS': {
+                'socket_connect_timeout': 1,
+                'socket_timeout': 1,
+            },
+        },
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'inventory-saas-local',
+        },
+    }
+
+DASHBOARD_CACHE_TTL_SECONDS = int(
+    os.getenv('DASHBOARD_CACHE_TTL_SECONDS', '60')
+)
+
+
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    "redis://localhost:6380/0",
+)
+
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", False)
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL",
+    "notifications@inventory.local",
+)

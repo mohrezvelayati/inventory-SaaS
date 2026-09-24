@@ -1,10 +1,16 @@
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from sales.models import Sale, SaleItem
 from inventory.services import create_inventory_movement
 from catalog.models import ProductVariant
+from dashboard.cache import schedule_dashboard_cache_invalidation
+from notifications.services import (
+    create_sale_completed_event,
+    enqueue_notification_event_after_commit,
+)
 
 
 ### Create empty sale (Draft) ###
@@ -263,12 +269,23 @@ def complete_sale(*, sale, user):
             quantity=-item.quantity,
             movement_type='sale',
             user=user,
-            note=f"Sale #{sale.id}"
+            note=f"Sale #{sale.id}",
+            invalidate_dashboard=False,
         )
 
     sale.status = Sale.StatusChoices.COMPLETED
+    sale.completed_at = timezone.now()
 
-    sale.save(update_fields = ['status'])
+    sale.save(update_fields = ['status', 'completed_at'])
+
+    event = create_sale_completed_event(sale=sale)
+
+    if event is not None:
+        enqueue_notification_event_after_commit(
+            event=event,
+        )
+
+    schedule_dashboard_cache_invalidation(sale.store_id)
 
     return sale
 
@@ -287,8 +304,12 @@ def cancel_sale(*, sale, user):
             quantity=item.quantity,
             movement_type='adjustment',
             user=user,
-            note=f"Cancellation of Sale #{sale.id}"
+            note=f"Cancellation of Sale #{sale.id}",
+            invalidate_dashboard=False,
         )
     sale.status = Sale.StatusChoices.CANCELLED
     sale.save(update_fields=['status'])
+
+    schedule_dashboard_cache_invalidation(sale.store_id)
+
     return sale

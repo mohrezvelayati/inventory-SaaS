@@ -1,6 +1,6 @@
 from decimal import Decimal
 from itertools import count
-
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from catalog.models import Category, Product, ProductVariant
@@ -36,7 +36,11 @@ def create_store(user=None, role=StoreMembership.RoleChoices.MANAGER, **override
     user = user or create_user()
     number = next(_sequence)
     store = Store.objects.create(
-        name=overrides.get('name', f'Store {number}')
+        name=overrides.get("name", f"Store {number}"),
+        notification_email=overrides.get(
+            "notification_email",
+            "",
+        ),
     )
     membership = StoreMembership.objects.create(
         store=store,
@@ -101,17 +105,39 @@ def create_customer(store, **overrides):
 
 
 def create_sale(store, seller, **overrides):
+    status = overrides.get(
+        'status',
+        Sale.StatusChoices.DRAFT,
+    )
+    completed_at = overrides.get('completed_at')
+
+    if (
+        completed_at is None
+        and status in {
+            Sale.StatusChoices.COMPLETED,
+            Sale.StatusChoices.CANCELLED,
+        }
+    ):
+        completed_at = timezone.now()
+
     return Sale.objects.create(
         store=store,
         seller=seller,
         customer=overrides.get('customer'),
-        channel=overrides.get('channel', Sale.ChannelChoices.STORE),
+        channel=overrides.get(
+            'channel',
+            Sale.ChannelChoices.STORE,
+        ),
         payment_method=overrides.get(
             'payment_method',
             Sale.PaymentChoices.CASH,
         ),
-        status=overrides.get('status', Sale.StatusChoices.DRAFT),
-        total_amount=overrides.get('total_amount', Decimal('0')),
+        status=status,
+        total_amount=overrides.get(
+            'total_amount',
+            Decimal('0'),
+        ),
+        completed_at=completed_at,
     )
 
 

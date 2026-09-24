@@ -16,7 +16,7 @@ def get_store_report(*, store, date_from, date_to):
     sales = Sale.objects.filter(
         store=store,
         status=Sale.StatusChoices.COMPLETED,
-        created_at__date__range=(date_from, date_to),
+        completed_at__date__range=(date_from, date_to),
     )
     items = SaleItem.objects.filter(sale__in=sales)
 
@@ -38,7 +38,7 @@ def get_store_report(*, store, date_from, date_to):
 
     daily_rows = {
         row['date']: row
-        for row in sales.annotate(date=TruncDate('created_at')).values('date').annotate(
+        for row in sales.annotate(date=TruncDate('completed_at')).values('date').annotate(
             orders_count=Count('id'),
             revenue=Sum('total_amount'),
         )

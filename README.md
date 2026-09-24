@@ -39,6 +39,8 @@ in this environment.
 - Cached stock balances backed by an inventory movement audit trail
 - Atomic batch purchase entry across existing and new product sizes
 - Draft sales, editable line items, atomic checkout, and cancellation
+- Asynchronous sale-completion email notifications backed by a persistent
+  outbox and bounded Celery retries
 - Tenant-scoped customer management and search/filter by gender and age
 - Wanted-product demand aggregation and request auditing
 - Dashboard metrics and financial/inventory reports
@@ -71,6 +73,8 @@ Register owner
 - drf-spectacular / OpenAPI / Swagger UI
 - Docker / Docker Compose
 - GitHub Actions and Render, with optional Sentry integration
+- Redis-backed dashboard caching
+- Celery 5.6 with Redis as the message broker
 
 Dependencies are pinned in [`requirements.txt`](requirements.txt).
 
@@ -86,6 +90,7 @@ sales/        Drafts, line items, checkout and cancellation
 customers/    Tenant-scoped customer CRUD, search and gender/age filters
 wanted/       Unavailable-product demand aggregation
 dashboard/    Dashboard metrics and analytical reports
+notifications/ Persistent outbox events and external notification delivery
 tests/        Cross-app integration, concurrency and smoke tests
 ```
 
@@ -226,11 +231,33 @@ The command uses the existing catalog, inventory, sales, membership,
 invitation, and wanted services so cached stock and audit history remain
 consistent. It refuses to run unless demo mode is explicitly enabled.
 
-Alternatively, start Django and PostgreSQL together:
+Alternatively, start PostgreSQL, Redis, Django, and the Celery worker together:
 
 ```bash
-docker compose up --build
+docker compose up -d --build db redis backend worker
 ```
+
+Redis database `0` is the Celery broker and database `1` stores dashboard
+cache entries. The worker consumes background jobs independently from the web
+process. Completed sales enqueue an email task only after the database
+transaction commits. Celery Beat is not implemented yet.
+
+Confirm the worker is reachable with:
+
+```bash
+docker compose exec worker celery -A config inspect ping
+```
+
+If a broker outage leaves notification events pending, queue the oldest 100
+again with:
+
+```bash
+python manage.py retry_notifications
+```
+
+Use `--include-failed` only after checking provider logs, because a failed
+client response does not always prove that the provider rejected the email.
+Use `--limit=N` to control the batch size.
 
 Configuration is environment-based. Copy `.env.example` to `.env` for local
 overrides and never commit real secrets.
@@ -245,9 +272,9 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-08-31 with Python 3.12 and Django 5.2:
+Verified on 2026-09-23 with Python 3.12 and Django 5.2:
 
-- 126 Django tests passed against PostgreSQL
+- 159 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors
@@ -257,7 +284,9 @@ settings, invitations, roles/capabilities, tenant isolation, catalog filters
 and bulk pricing, customer/Wanted flows, inventory invariants, concurrent batch
 purchases and checkout, concurrent demand increments, sales lifecycle,
 dashboard/report correctness, schema paths, and the complete
-owner-registration-to-employee-invitation smoke workflow.
+owner-registration-to-employee-invitation smoke workflow. Notification tests
+also cover commit-safe enqueueing, broker failure isolation, delivery state,
+deduplication, retry behavior, and bounded manual recovery.
 
 ## Deployment and Operations
 

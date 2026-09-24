@@ -3,6 +3,7 @@ from django.db.models import F
 from django.core.exceptions import ValidationError
 
 from wanted.models import WantedProduct, WantedCustomerRequest
+from dashboard.cache import schedule_dashboard_cache_invalidation
 
 
 @transaction.atomic
@@ -44,5 +45,7 @@ def create_wanted(
         customer=customer,
         created_by=user,
     )
+
+    schedule_dashboard_cache_invalidation(store.id)
 
     return wanted_product

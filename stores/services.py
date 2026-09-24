@@ -71,11 +71,16 @@ def get_current_membership(user):
 
 
 @transaction.atomic
-def create_store_with_membership(*, user, name):
-
-    store = Store.objects.create(name=name)
-
-    membership = StoreMembership.objects.create(store=store, user=user, role=StoreMembership.RoleChoices.MANAGER)
+def create_store_with_membership(*, user, name, notification_email=""):
+    store = Store.objects.create(
+        name=name,
+        notification_email=notification_email,
+    )
+    membership = StoreMembership.objects.create(
+        store=store,
+        user=user,
+        role=StoreMembership.RoleChoices.MANAGER,
+    )
     assign_default_permissions(membership=membership)
 
     return store
@@ -83,8 +88,11 @@ def create_store_with_membership(*, user, name):
 
 @transaction.atomic
 def create_store_membership(*, store, user, role):
-
-    membership = StoreMembership.objects.create(store=store, user=user, role=role)
+    membership = StoreMembership.objects.create(
+        store=store,
+        user=user,
+        role=role,
+    )
     assign_default_permissions(membership=membership)
 
     return membership
