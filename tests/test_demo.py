@@ -35,6 +35,7 @@ class DemoSeedTests(TestCase):
         membership = get_current_membership(demo_user)
         store = membership.store
 
+        self.assertEqual(store.name, 'فروشگاه دمو دستکت')
         self.assertEqual(membership.role, StoreMembership.RoleChoices.MANAGER)
         self.assertEqual(StoreMembership.objects.filter(store=store).count(), 3)
         self.assertEqual(Category.objects.filter(store=store).count(), 4)
