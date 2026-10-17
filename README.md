@@ -10,16 +10,16 @@ The backend is a Django REST API. The mobile-first Persian/RTL React client is
 maintained separately in
 [`mohrezvelayati/inventory-saas-frontend`](https://github.com/mohrezvelayati/inventory-saas-frontend).
 
-> Current maturity: live portfolio MVP running on Render with demo data only.
+> Current maturity: live portfolio MVP running on Liara with demo data only.
 > Upgrade PostgreSQL and complete the restore drill before storing real customer
 > data.
 
 ## Live Demo
 
-- Frontend: <https://inventory-saas-frontend-evln.onrender.com>
-- Backend API: <https://inventory-saas-api-k6wp.onrender.com>
-- Swagger UI: <https://inventory-saas-api-k6wp.onrender.com/api/v1/docs/>
-- Readiness: <https://inventory-saas-api-k6wp.onrender.com/api/v1/health/ready/>
+- [Frontend demo](https://dastaket-app.liara.run/)
+- [Swagger UI](https://dastaket-api.liara.run/api/v1/docs/)
+- [OpenAPI schema](https://dastaket-api.liara.run/api/v1/schema/)
+- [API readiness check](https://dastaket-api.liara.run/api/v1/health/ready/)
 
 Use **ورود به نسخهٔ نمایشی** on the login page to enter the shared, writable
 portfolio store without registering or entering credentials. The synthetic
@@ -72,7 +72,7 @@ Register owner
 - SimpleJWT
 - drf-spectacular / OpenAPI / Swagger UI
 - Docker / Docker Compose
-- GitHub Actions and Render, with optional Sentry integration
+- GitHub Actions and Liara, with optional Sentry integration
 - Redis-backed dashboard caching
 - Celery 5.6 with Redis as the message broker
 
@@ -290,15 +290,20 @@ deduplication, retry behavior, and bounded manual recovery.
 
 ## Deployment and Operations
 
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): Render deployment
+- [`liara_pre_start.sh`](liara_pre_start.sh): migrations, static files, and demo
+  setup before startup
+- [`supervisor.conf`](supervisor.conf): web and Celery worker process
+  configuration
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md): monitoring, backup, restore,
   rollback, secret rotation, and incident response
-- [`docs/DEMO_CHECKLIST.md`](docs/DEMO_CHECKLIST.md): repeatable manual portfolio demo
+- [`docs/DEMO_CHECKLIST.md`](docs/DEMO_CHECKLIST.md): repeatable manual
+  portfolio demo
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): legacy Render deployment reference
 
-The backend and PostgreSQL are configured by [`render.yaml`](render.yaml).
-Production deploys wait for GitHub Actions checks. The Vite frontend is a Render
-Static Site deployed from its separate repository and uses `VITE_API_BASE_URL`
-to reach this API.
+The live backend and Celery worker run on Liara. The Vite frontend is deployed
+from its separate repository and uses `VITE_API_BASE_URL` to reach this API.
+[`render.yaml`](render.yaml) remains available as an alternative Render
+blueprint rather than the configuration for the current live demo.
 
 Known non-blocking gaps include no dedicated Wanted customer-request history
 endpoint, manual invitation delivery, and inconsistent legacy formatting/error
@@ -306,9 +311,9 @@ language.
 
 ## Production Guardrail
 
-Free Render PostgreSQL expires after 30 days and has no managed backups. Use it
-only for the first deployment exercise. Upgrade the database, enable Sentry and
-uptime monitoring, configure the SMS provider, and complete a restore drill
+The public deployment is a portfolio environment with synthetic demo data, not
+a production data environment. Provision backed-up PostgreSQL, enable Sentry
+and uptime monitoring, configure the SMS provider, and complete a restore drill
 before storing real customer data.
 
 ## License
