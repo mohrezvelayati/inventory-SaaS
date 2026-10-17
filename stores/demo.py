@@ -165,7 +165,7 @@ def reset_demo_data():
 
     store = create_store_with_membership(
         user=demo_user,
-        name='فروشگاه دمو انبارینو',
+        name='فروشگاه دمو دستکت',
     )
     manager = get_current_membership(demo_user)
 
