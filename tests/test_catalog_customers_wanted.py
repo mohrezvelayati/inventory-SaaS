@@ -20,6 +20,7 @@ from tests.factories import (
     create_user,
     create_variant,
     create_wanted_product,
+    grant_permission,
 )
 from users.models import User
 from wanted.models import WantedCustomerRequest, WantedProduct
@@ -468,6 +469,35 @@ class CustomerApiTests(TestCase):
         )
         self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Customer.objects.filter(pk=customer_id).exists())
+
+    def test_manage_wanted_can_read_customer_picker_but_cannot_create(self):
+        wanted_user = create_user()
+        membership = StoreMembership.objects.create(
+            store=self.store,
+            user=wanted_user,
+            role=StoreMembership.RoleChoices.ADMIN,
+        )
+        grant_permission(membership, 'manage_wanted')
+        client = authenticated_client(wanted_user)
+        customer = create_customer(self.store)
+        other_store, _ = create_store()
+        create_customer(other_store)
+
+        list_response = client.get('/api/v1/customers/')
+        create_response = client.post(
+            '/api/v1/customers/',
+            {
+                'full_name': 'Not Allowed',
+                'phone_number': '09119999999',
+                'gender': 'male',
+            },
+            format='json',
+        )
+
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data['count'], 1)
+        self.assertEqual(list_response.data['results'][0]['id'], customer.id)
+        self.assertEqual(create_response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_phone_is_unique_within_store_but_not_globally(self):
         phone = '09222222222'

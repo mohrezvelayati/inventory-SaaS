@@ -207,7 +207,9 @@ reference.
 
 Wanted demand is aggregated by product name and size, while each registration
 keeps its own customer audit row. Creating a wanted request requires a customer
-from the current store. Customer contact history is available from:
+from the current store. `manage_wanted` can read the tenant-scoped customer
+list for this picker, but customer mutations still require
+`manage_customers`. Customer contact history is available from:
 
 ```text
 GET /api/v1/wanted/{wanted_id}/requests/
