@@ -1,6 +1,6 @@
 # Inventory SaaS — AI Project Handoff
 
-Last verified: 2026-09-20
+Last verified: 2026-10-18
 Backend repository: `mohrezvelayati/inventory-SaaS`
 Frontend repository: `mohrezvelayati/inventory-saas-frontend`
 
@@ -459,6 +459,7 @@ internal outbox record; no notification API is exposed.
 | GET/PUT/PATCH/DELETE | `/customers/{customer_id}/` |
 | GET/POST | `/wanted/` |
 | GET/PUT/PATCH/DELETE | `/wanted/{wanted_id}/` |
+| GET | `/wanted/{wanted_id}/requests/` |
 | GET | `/dashboard/` |
 | GET | `/dashboard/reports/` |
 
@@ -478,6 +479,14 @@ Dashboard/report dates use `YYYY-MM-DD`. Report range is limited by
 Only the summary endpoint at `GET /dashboard/` is cached. The analytical
 `GET /dashboard/reports/` endpoint is intentionally uncached because it accepts
 larger arbitrary ranges and is used less frequently.
+
+Creating wanted demand requires a customer from the current store. Matching
+product-name/size submissions still increment the aggregate `WantedProduct`,
+and every submission creates a separate `WantedCustomerRequest`. The paginated
+history endpoint returns the customer name and phone number, the employee who
+recorded the request, and its creation time. Cross-store parent IDs return 404.
+Legacy rows without a customer, or rows whose customer was deleted through the
+existing `SET_NULL` relation, return null customer contact fields.
 
 OpenAPI and admin endpoints:
 
@@ -587,10 +596,13 @@ still authoritative.
 
 ### Wanted demand
 
-- Optional product and customer must belong to the current store.
+- Product is optional; every new request requires a customer from the current
+  store.
 - Matching `(store, product_name, size)` requests increment `wanted_count`
   atomically.
 - Every request creates a `WantedCustomerRequest` audit row.
+- Customer request history is tenant-scoped and exposes contact and recording
+  metadata through `/wanted/{wanted_id}/requests/`.
 
 ### Dashboard/report correctness
 
@@ -757,9 +769,9 @@ npm run lint
 npm run build
 ```
 
-At last backend verification on 2026-09-23:
+At last backend verification on 2026-10-18:
 
-- Django: 159/159 tests passed
+- Django: 163/163 tests passed
 - Vitest: 31/31 tests passed
 - oxlint: passed without warnings
 - TypeScript/Vite production build: passed
@@ -833,8 +845,6 @@ High-priority blockers:
   record instead of storing every task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
-- `WantedCustomerRequest` is stored as an audit trail but does not yet have a
-  dedicated history endpoint.
 - CI, Render/Vercel configuration, health checks, JSON logging, Sentry hooks,
   and operations runbooks exist. Backups and rollback/restore drills require
   the real cloud resources and must be completed before customer data.
@@ -890,6 +900,8 @@ Important completed phases, based on Git history and current code:
   suppression for sent events, and bounded retry for transient SMTP failures
 - Bounded manual recovery for pending notification events, with failed-event
   replay requiring an explicit operator choice
+- Required customer attribution for wanted demand and a tenant-scoped customer
+  request history API
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,

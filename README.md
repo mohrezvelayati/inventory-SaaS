@@ -205,6 +205,14 @@ Admin:      http://127.0.0.1:8000/admin/
 Use the generated OpenAPI schema and Swagger UI as the authoritative public API
 reference.
 
+Wanted demand is aggregated by product name and size, while each registration
+keeps its own customer audit row. Creating a wanted request requires a customer
+from the current store. Customer contact history is available from:
+
+```text
+GET /api/v1/wanted/{wanted_id}/requests/
+```
+
 ## Local Backend Setup
 
 Prerequisites:
@@ -272,9 +280,9 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-09-23 with Python 3.12 and Django 5.2:
+Verified on 2026-10-18 with Python 3.12 and Django 5.2:
 
-- 159 Django tests passed against PostgreSQL
+- 163 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors
@@ -305,9 +313,8 @@ from its separate repository and uses `VITE_API_BASE_URL` to reach this API.
 [`render.yaml`](render.yaml) remains available as an alternative Render
 blueprint rather than the configuration for the current live demo.
 
-Known non-blocking gaps include no dedicated Wanted customer-request history
-endpoint, manual invitation delivery, and inconsistent legacy formatting/error
-language.
+Known non-blocking gaps include manual invitation delivery and inconsistent
+legacy formatting/error language.
 
 ## Production Guardrail
 

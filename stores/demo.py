@@ -368,7 +368,7 @@ def reset_demo_data():
                 product_name=product_name,
                 brand=brand,
                 size=size,
-                customer=customers[index % len(customers)] if index % 2 == 0 else None,
+                customer=customers[index % len(customers)],
                 user=demo_user if index % 3 == 0 else seller_user,
             )
 
