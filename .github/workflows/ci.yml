@@ -29,7 +29,7 @@ jobs:
       DJANGO_SETTINGS_MODULE: config.settings.test
       DATABASE_URL: postgresql://inventory:inventory@127.0.0.1:5432/inventory_saas
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -52,7 +52,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
