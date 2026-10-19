@@ -225,7 +225,7 @@ class SaleListView(generics.ListAPIView):
                 Q(customer__phone_number__icontains=search)
             )
             if search.isdigit():
-                query |= Q(id=int(search))
+                query |= Q(sale_number=int(search))
             sales = sales.filter(query)
 
         if status_filter:

@@ -1,6 +1,6 @@
 # Inventory SaaS — AI Project Handoff
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 Backend repository: `mohrezvelayati/inventory-SaaS`
 Frontend repository: `mohrezvelayati/inventory-saas-frontend`
 
@@ -440,11 +440,14 @@ History supports `product_id`, `variant_id`, `created_by_id`,
 | POST | `/sales/{sale_id}/complete/` |
 | POST | `/sales/{sale_id}/cancel/` |
 
-Sale list supports `search` by customer/id, `status`, `channel`, `date_from`,
-and `date_to`.
+Sale list supports `search` by customer or the store-scoped `sale_number`, plus
+`status`, `channel`, `date_from`, and `date_to`. The global `id` remains the
+internal identifier used by detail and mutation URLs.
 
-Sale responses include `completed_at`. It is `null` for drafts and is set
-atomically when checkout succeeds.
+Sale responses include `sale_number` and `completed_at`. Both are `null` for
+drafts and are set atomically when checkout succeeds. Sale numbers start at 1
+independently inside each store and are protected by a database uniqueness
+constraint on `(store, sale_number)`.
 
 Completing a sale also persists a `sale_completed` NotificationEvent in the
 same database transaction when the store has configured a notification email.
@@ -574,6 +577,10 @@ still authoritative.
 - Checkout locks the sale and variants in deterministic ID order, aggregates
   duplicate variant requirements, validates stock, writes negative movements,
   and marks the sale completed atomically.
+- Drafts have `sale_number=null`. Successful checkout locks the store and
+  assigns the next sequential number within that tenant. The `(store,
+  sale_number)` database constraint protects uniqueness under concurrency;
+  cancelled sales retain their original number.
 - Completed sales record `completed_at`; dashboards and financial reports use
   the completion date rather than the draft creation date.
 - Successful checkout creates a pending `sale_completed` NotificationEvent in
@@ -769,16 +776,19 @@ npm run lint
 npm run build
 ```
 
-At last backend verification on 2026-10-18:
+At last backend verification on 2026-10-19:
 
-- Django: 163/163 tests passed
-- Vitest: 31/31 tests passed
-- oxlint: passed without warnings
-- TypeScript/Vite production build: passed
+- Django: 168/168 tests passed
 - Migration drift check: no changes detected
 - `stores.0007_store_invitation_and_default_permissions` applied locally
 - OpenAPI validation: zero errors and three non-blocking enum-name collision
   warnings for repeated `role`/`status` choice field names
+
+Most recent recorded frontend verification:
+
+- Vitest: 31/31 tests passed
+- oxlint: passed without warnings
+- TypeScript/Vite production build: passed
 
 A feature is not complete until:
 
@@ -888,6 +898,8 @@ Important completed phases, based on Git history and current code:
 - Guarded one-click demo login plus an atomic service-backed synthetic tenant
   rebuild covering every implemented product workflow
 - Atomic sale completion timestamps used by dashboard and financial reports
+- Concurrent-safe, sequential per-store sale numbers assigned only after
+  successful checkout
 - Tenant/date-scoped dashboard response caching with post-commit version
   invalidation and database fallback when Redis is unavailable
 - Celery worker foundation using Redis DB 0 as broker, eager isolated tests, and

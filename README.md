@@ -137,6 +137,9 @@ API View -> Serializer validation -> Service -> Model / PostgreSQL
 - Discounts cannot be negative or exceed the line subtotal.
 - Checkout locks the Sale and Variants, aggregates duplicate Variant demand,
   validates stock, creates movements, and completes the Sale atomically.
+- Drafts have no public sale number. Successful checkout assigns a sequential
+  `sale_number` within that store; the global `id` remains an internal API and
+  URL identifier.
 - Cancelling a completed Sale keeps the record and restores stock with positive
   adjustment movements.
 
@@ -282,9 +285,9 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-10-18 with Python 3.12 and Django 5.2:
+Verified on 2026-10-19 with Python 3.12 and Django 5.2:
 
-- 163 Django tests passed against PostgreSQL
+- 168 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors

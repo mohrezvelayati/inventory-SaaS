@@ -1,9 +1,10 @@
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from sales.models import Sale, SaleItem
+from stores.models import Store
 from inventory.services import create_inventory_movement
 from catalog.models import ProductVariant
 from dashboard.cache import schedule_dashboard_cache_invalidation
@@ -261,6 +262,18 @@ def complete_sale(*, sale, user):
         locked_variants=locked_variants,
         )
 
+    Store.objects.select_for_update().only('id').get(pk=sale.store_id)
+    latest_sale_number = (
+        Sale.objects
+        .filter(
+            store_id=sale.store_id,
+            sale_number__isnull=False,
+        )
+        .aggregate(latest=Max('sale_number'))['latest']
+        or 0
+    )
+    sale.sale_number = latest_sale_number + 1
+
     # کاهش موجودی
     for item in items:
         create_inventory_movement(
@@ -269,14 +282,20 @@ def complete_sale(*, sale, user):
             quantity=-item.quantity,
             movement_type='sale',
             user=user,
-            note=f"Sale #{sale.id}",
+            note=f"Sale #{sale.sale_number}",
             invalidate_dashboard=False,
         )
 
     sale.status = Sale.StatusChoices.COMPLETED
     sale.completed_at = timezone.now()
 
-    sale.save(update_fields = ['status', 'completed_at'])
+    sale.save(
+        update_fields=[
+            'status',
+            'sale_number',
+            'completed_at',
+        ]
+    )
 
     event = create_sale_completed_event(sale=sale)
 
@@ -304,7 +323,7 @@ def cancel_sale(*, sale, user):
             quantity=item.quantity,
             movement_type='adjustment',
             user=user,
-            note=f"Cancellation of Sale #{sale.id}",
+            note=f"Cancellation of Sale #{sale.sale_number or sale.id}",
             invalidate_dashboard=False,
         )
     sale.status = Sale.StatusChoices.CANCELLED
