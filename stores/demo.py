@@ -101,8 +101,8 @@ def _prepare_employee(*, username, full_name, phone_seed):
 def _set_sale_date(*, sale, created_at):
     Sale.objects.filter(pk=sale.pk).update(created_at=created_at)
     InventoryMovement.objects.filter(
-        Q(note=f'Sale #{sale.pk}')
-        | Q(note=f'Cancellation of Sale #{sale.pk}')
+        Q(note=f'Sale #{sale.sale_number}')
+        | Q(note=f'Cancellation of Sale #{sale.sale_number}')
     ).update(created_at=created_at)
 
 

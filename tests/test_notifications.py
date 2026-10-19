@@ -66,6 +66,10 @@ class SaleNotificationOutboxTests(TestCase):
             self.sale.id,
         )
         self.assertEqual(
+            event.payload["sale_number"],
+            self.sale.sale_number,
+        )
+        self.assertEqual(
             event.payload["store_id"],
             self.store.id,
         )
@@ -146,6 +150,7 @@ class SaleNotificationOutboxTests(TestCase):
             Sale.StatusChoices.DRAFT,
         )
         self.assertIsNone(self.sale.completed_at)
+        self.assertIsNone(self.sale.sale_number)
         self.assertEqual(
             self.variant.current_stock,
             2,

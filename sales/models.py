@@ -30,11 +30,18 @@ class Sale(models.Model):
     channel = models.CharField(max_length=20, choices=ChannelChoices.choices)
     payment_method = models.CharField(max_length=20, choices=PaymentChoices.choices)
     status = models.CharField(max_length=20,choices=StatusChoices.choices,default=StatusChoices.DRAFT)
+    sale_number = models.PositiveBigIntegerField(null=True, blank=True)
     total_amount = models.DecimalField(max_digits=12, decimal_places=0, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['store', 'sale_number'],
+                name='unique_sale_number_per_store',
+            ),
+        ]
         indexes = [
             models.Index(
                 fields=['store', 'status', 'completed_at'],

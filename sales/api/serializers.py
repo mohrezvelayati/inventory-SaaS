@@ -37,6 +37,7 @@ class SaleSerializer(serializers.ModelSerializer):
 
         fields = [
             "id",
+            "sale_number",
             "customer",
             "channel",
             "payment_method",
@@ -50,6 +51,10 @@ class SaleSerializer(serializers.ModelSerializer):
 
 class SaleCreateSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
+    sale_number = serializers.IntegerField(
+        read_only=True,
+        allow_null=True,
+    )
     customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.none(), required=False, allow_null=True)
     channel = serializers.ChoiceField(choices=Sale.ChannelChoices.choices)
     payment_method = serializers.ChoiceField(choices=Sale.PaymentChoices.choices)
