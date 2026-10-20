@@ -257,6 +257,7 @@ class SaleFlowTests(TestCase):
         self.assertEqual(response.data['id'], sale.id)
         self.assertIsNone(response.data['sale_number'])
         self.assertIsNone(response.data['customer'])
+        self.assertIsNone(response.data['customer_name'])
         self.assertEqual(
             response.data['channel'],
             Sale.ChannelChoices.STORE,
@@ -275,6 +276,23 @@ class SaleFlowTests(TestCase):
 
         self.assertIn('completed_at', response.data)
         self.assertIsNone(response.data['completed_at'])
+
+    def test_sale_detail_exposes_customer_name(self):
+        customer = create_customer(
+            self.store,
+            full_name='Niloofar Moradi',
+        )
+        sale = create_sale(
+            self.store,
+            self.membership,
+            customer=customer,
+        )
+
+        response = self.client.get(f'/api/v1/sales/{sale.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['customer'], customer.id)
+        self.assertEqual(response.data['customer_name'], customer.full_name)
 
     def test_sale_numbers_are_sequential_within_each_store(self):
         first_sale = create_sale(self.store, self.membership)

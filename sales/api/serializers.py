@@ -27,6 +27,11 @@ class SaleItemSerializer(serializers.ModelSerializer):
 
 
 class SaleSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(
+        source="customer.full_name",
+        read_only=True,
+        allow_null=True,
+    )
     items = SaleItemSerializer(
         many = True,
         read_only = True,
@@ -39,6 +44,7 @@ class SaleSerializer(serializers.ModelSerializer):
             "id",
             "sale_number",
             "customer",
+            "customer_name",
             "channel",
             "payment_method",
             "status",
@@ -56,6 +62,11 @@ class SaleCreateSerializer(serializers.Serializer):
         allow_null=True,
     )
     customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.none(), required=False, allow_null=True)
+    customer_name = serializers.CharField(
+        source="customer.full_name",
+        read_only=True,
+        allow_null=True,
+    )
     channel = serializers.ChoiceField(choices=Sale.ChannelChoices.choices)
     payment_method = serializers.ChoiceField(choices=Sale.PaymentChoices.choices)
     status = serializers.ChoiceField(choices=Sale.StatusChoices.choices, read_only=True)
