@@ -13,6 +13,7 @@ class SaleCompletedEmailTests(SimpleTestCase):
     def setUp(self):
         self.payload = {
             "sale_id": 42,
+            "sale_number": 7,
             "store_name": "Test Store",
             "total_amount": "5800000",
             "channel_label": "اینستاگرام",
@@ -45,6 +46,23 @@ class SaleCompletedEmailTests(SimpleTestCase):
         self.assertIn(
             "5800000",
             message.body,
+        )
+        self.assertIn(
+            "شماره فروش: 7",
+            message.body,
+        )
+
+    def test_legacy_payload_falls_back_to_sale_id(self):
+        self.payload.pop("sale_number")
+
+        send_sale_completed_email(
+            recipient_email="manager@example.com",
+            payload=self.payload,
+        )
+
+        self.assertIn(
+            "شماره فروش: 42",
+            mail.outbox[0].body,
         )
 
     @patch(

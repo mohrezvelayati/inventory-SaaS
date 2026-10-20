@@ -1,6 +1,6 @@
 # Inventory SaaS — AI Project Handoff
 
-Last verified: 2026-09-20
+Last verified: 2026-10-19
 Backend repository: `mohrezvelayati/inventory-SaaS`
 Frontend repository: `mohrezvelayati/inventory-saas-frontend`
 
@@ -440,11 +440,14 @@ History supports `product_id`, `variant_id`, `created_by_id`,
 | POST | `/sales/{sale_id}/complete/` |
 | POST | `/sales/{sale_id}/cancel/` |
 
-Sale list supports `search` by customer/id, `status`, `channel`, `date_from`,
-and `date_to`.
+Sale list supports `search` by customer or the store-scoped `sale_number`, plus
+`status`, `channel`, `date_from`, and `date_to`. The global `id` remains the
+internal identifier used by detail and mutation URLs.
 
-Sale responses include `completed_at`. It is `null` for drafts and is set
-atomically when checkout succeeds.
+Sale responses include `sale_number` and `completed_at`. Both are `null` for
+drafts and are set atomically when checkout succeeds. Sale numbers start at 1
+independently inside each store and are protected by a database uniqueness
+constraint on `(store, sale_number)`.
 
 Completing a sale also persists a `sale_completed` NotificationEvent in the
 same database transaction when the store has configured a notification email.
@@ -459,6 +462,7 @@ internal outbox record; no notification API is exposed.
 | GET/PUT/PATCH/DELETE | `/customers/{customer_id}/` |
 | GET/POST | `/wanted/` |
 | GET/PUT/PATCH/DELETE | `/wanted/{wanted_id}/` |
+| GET | `/wanted/{wanted_id}/requests/` |
 | GET | `/dashboard/` |
 | GET | `/dashboard/reports/` |
 
@@ -478,6 +482,14 @@ Dashboard/report dates use `YYYY-MM-DD`. Report range is limited by
 Only the summary endpoint at `GET /dashboard/` is cached. The analytical
 `GET /dashboard/reports/` endpoint is intentionally uncached because it accepts
 larger arbitrary ranges and is used less frequently.
+
+Creating wanted demand requires a customer from the current store. Matching
+product-name/size submissions still increment the aggregate `WantedProduct`,
+and every submission creates a separate `WantedCustomerRequest`. The paginated
+history endpoint returns the customer name and phone number, the employee who
+recorded the request, and its creation time. Cross-store parent IDs return 404.
+Legacy rows without a customer, or rows whose customer was deleted through the
+existing `SET_NULL` relation, return null customer contact fields.
 
 OpenAPI and admin endpoints:
 
@@ -565,6 +577,10 @@ still authoritative.
 - Checkout locks the sale and variants in deterministic ID order, aggregates
   duplicate variant requirements, validates stock, writes negative movements,
   and marks the sale completed atomically.
+- Drafts have `sale_number=null`. Successful checkout locks the store and
+  assigns the next sequential number within that tenant. The `(store,
+  sale_number)` database constraint protects uniqueness under concurrency;
+  cancelled sales retain their original number.
 - Completed sales record `completed_at`; dashboards and financial reports use
   the completion date rather than the draft creation date.
 - Successful checkout creates a pending `sale_completed` NotificationEvent in
@@ -587,10 +603,13 @@ still authoritative.
 
 ### Wanted demand
 
-- Optional product and customer must belong to the current store.
+- Product is optional; every new request requires a customer from the current
+  store.
 - Matching `(store, product_name, size)` requests increment `wanted_count`
   atomically.
 - Every request creates a `WantedCustomerRequest` audit row.
+- Customer request history is tenant-scoped and exposes contact and recording
+  metadata through `/wanted/{wanted_id}/requests/`.
 
 ### Dashboard/report correctness
 
@@ -757,16 +776,19 @@ npm run lint
 npm run build
 ```
 
-At last backend verification on 2026-09-23:
+At last backend verification on 2026-10-19:
 
-- Django: 159/159 tests passed
-- Vitest: 31/31 tests passed
-- oxlint: passed without warnings
-- TypeScript/Vite production build: passed
+- Django: 168/168 tests passed
 - Migration drift check: no changes detected
 - `stores.0007_store_invitation_and_default_permissions` applied locally
 - OpenAPI validation: zero errors and three non-blocking enum-name collision
   warnings for repeated `role`/`status` choice field names
+
+Most recent recorded frontend verification:
+
+- Vitest: 31/31 tests passed
+- oxlint: passed without warnings
+- TypeScript/Vite production build: passed
 
 A feature is not complete until:
 
@@ -833,8 +855,6 @@ High-priority blockers:
   record instead of storing every task result.
 - The public demo account is shared and writable, so concurrent visitors may
   see each other's changes until its guarded tenant reset runs again.
-- `WantedCustomerRequest` is stored as an audit trail but does not yet have a
-  dedicated history endpoint.
 - CI, Render/Vercel configuration, health checks, JSON logging, Sentry hooks,
   and operations runbooks exist. Backups and rollback/restore drills require
   the real cloud resources and must be completed before customer data.
@@ -878,6 +898,8 @@ Important completed phases, based on Git history and current code:
 - Guarded one-click demo login plus an atomic service-backed synthetic tenant
   rebuild covering every implemented product workflow
 - Atomic sale completion timestamps used by dashboard and financial reports
+- Concurrent-safe, sequential per-store sale numbers assigned only after
+  successful checkout
 - Tenant/date-scoped dashboard response caching with post-commit version
   invalidation and database fallback when Redis is unavailable
 - Celery worker foundation using Redis DB 0 as broker, eager isolated tests, and
@@ -890,6 +912,8 @@ Important completed phases, based on Git history and current code:
   suppression for sent events, and bounded retry for transient SMTP failures
 - Bounded manual recovery for pending notification events, with failed-event
   replay requiring an explicit operator choice
+- Required customer attribution for wanted demand and a tenant-scoped customer
+  request history API
 
 Older plans may describe invitations, tenant fixes, reports, or frontend pages
 as future work even though they are now implemented. Prefer this document,

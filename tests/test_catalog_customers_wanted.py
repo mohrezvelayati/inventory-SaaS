@@ -20,6 +20,7 @@ from tests.factories import (
     create_user,
     create_variant,
     create_wanted_product,
+    grant_permission,
 )
 from users.models import User
 from wanted.models import WantedCustomerRequest, WantedProduct
@@ -469,6 +470,35 @@ class CustomerApiTests(TestCase):
         self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Customer.objects.filter(pk=customer_id).exists())
 
+    def test_manage_wanted_can_read_customer_picker_but_cannot_create(self):
+        wanted_user = create_user()
+        membership = StoreMembership.objects.create(
+            store=self.store,
+            user=wanted_user,
+            role=StoreMembership.RoleChoices.ADMIN,
+        )
+        grant_permission(membership, 'manage_wanted')
+        client = authenticated_client(wanted_user)
+        customer = create_customer(self.store)
+        other_store, _ = create_store()
+        create_customer(other_store)
+
+        list_response = client.get('/api/v1/customers/')
+        create_response = client.post(
+            '/api/v1/customers/',
+            {
+                'full_name': 'Not Allowed',
+                'phone_number': '09119999999',
+                'gender': 'male',
+            },
+            format='json',
+        )
+
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data['count'], 1)
+        self.assertEqual(list_response.data['results'][0]['id'], customer.id)
+        self.assertEqual(create_response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_phone_is_unique_within_store_but_not_globally(self):
         phone = '09222222222'
         create_customer(self.store, phone_number=phone)
@@ -627,6 +657,102 @@ class WantedApiTests(TestCase):
         self.assertTrue(requests.filter(customer=self.customer).exists())
         self.assertTrue(requests.filter(created_by=self.user).exists())
 
+    def test_wanted_requires_customer(self):
+        response = self.client.post(
+            '/api/v1/wanted/',
+            {
+                'product_name': 'Rare Shoe',
+                'size': '42',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('customer', response.data)
+
+    def test_wanted_request_history_contains_customer_contact(self):
+        second_customer = create_customer(
+            self.store,
+            full_name='Second Customer',
+            phone_number='09128889999',
+        )
+        payload = {
+            'product_name': 'Rare Shoe',
+            'brand': 'Brand X',
+            'size': '42',
+        }
+
+        first_response = self.client.post(
+            '/api/v1/wanted/',
+            {**payload, 'customer': self.customer.id},
+            format='json',
+        )
+        second_response = self.client.post(
+            '/api/v1/wanted/',
+            {**payload, 'customer': second_customer.id},
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second_response.status_code, status.HTTP_201_CREATED)
+
+        wanted = WantedProduct.objects.get(
+            store=self.store,
+            product_name='Rare Shoe',
+            size='42',
+        )
+        response = self.client.get(
+            f'/api/v1/wanted/{wanted.id}/requests/'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 2)
+
+        requests_by_customer = {
+            item['customer']: item
+            for item in response.data['results']
+        }
+        self.assertEqual(
+            requests_by_customer[self.customer.id]['customer_phone_number'],
+            self.customer.phone_number,
+        )
+        self.assertEqual(
+            requests_by_customer[second_customer.id]['customer_name'],
+            second_customer.full_name,
+        )
+        self.assertEqual(
+            requests_by_customer[self.customer.id]['created_by'],
+            self.user.id,
+        )
+
+    def test_wanted_request_history_hides_other_store(self):
+        other_store, _ = create_store()
+        other_wanted = create_wanted_product(other_store)
+
+        response = self.client.get(
+            f'/api/v1/wanted/{other_wanted.id}/requests/'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_wanted_request_history_preserves_legacy_null_customer(self):
+        wanted = create_wanted_product(self.store)
+        WantedCustomerRequest.objects.create(
+            wanted_product=wanted,
+            customer=None,
+            created_by=self.user,
+        )
+
+        response = self.client.get(
+            f'/api/v1/wanted/{wanted.id}/requests/'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        request_data = response.data['results'][0]
+        self.assertIsNone(request_data['customer'])
+        self.assertIsNone(request_data['customer_name'])
+        self.assertIsNone(request_data['customer_phone_number'])
+
     def test_wanted_rejects_other_store_relations(self):
         other_store, _ = create_store()
         other_product = create_product(other_store)
@@ -638,6 +764,7 @@ class WantedApiTests(TestCase):
                 'product': other_product.id,
                 'product_name': 'Other',
                 'size': '40',
+                'customer': self.customer.id,
             },
             format='json',
         )
@@ -727,10 +854,11 @@ class WantedConcurrencyTests(TransactionTestCase):
     def test_concurrent_requests_do_not_lose_wanted_count(self):
         user = create_user()
         store, _ = create_store(user)
+        customer = create_customer(store)
         barrier = Barrier(2)
         outcomes = []
 
-        def record_request(store_id, user_id):
+        def record_request(store_id, user_id, customer_id):
             close_old_connections()
             try:
                 barrier.wait()
@@ -739,6 +867,7 @@ class WantedConcurrencyTests(TransactionTestCase):
                     product_name='Concurrent Product',
                     brand='Brand',
                     size='42',
+                    customer=Customer.objects.get(pk=customer_id),
                     user=User.objects.get(pk=user_id),
                 )
                 outcomes.append('created')
@@ -746,7 +875,10 @@ class WantedConcurrencyTests(TransactionTestCase):
                 close_old_connections()
 
         threads = [
-            Thread(target=record_request, args=(store.id, user.id))
+            Thread(
+                target=record_request,
+                args=(store.id, user.id, customer.id),
+            )
             for _ in range(2)
         ]
         for thread in threads:

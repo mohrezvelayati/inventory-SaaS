@@ -26,6 +26,7 @@ def create_sale_completed_event(*, sale):
         defaults={
             "payload": {
                 "sale_id": sale.id,
+                "sale_number": sale.sale_number,
                 "store_id": sale.store_id,
                 "store_name": sale.store.name,
                 "seller_id": sale.seller_id,

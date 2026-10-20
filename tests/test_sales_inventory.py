@@ -1,7 +1,7 @@
 from threading import Barrier, Thread
 
 from django.utils import timezone
-from django.db import close_old_connections
+from django.db import IntegrityError, close_old_connections, transaction
 from django.test import TestCase, TransactionTestCase
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -17,6 +17,7 @@ from tests.factories import (
     create_customer,
     create_product,
     create_sale,
+    create_sale_item,
     create_store,
     create_user,
     create_variant,
@@ -59,6 +60,7 @@ class SaleFlowTests(TestCase):
 
         self.assertEqual(complete_response.status_code, status.HTTP_200_OK)
         sale.refresh_from_db()
+        self.assertEqual(sale.sale_number, 1)
         self.assertIsNotNone(sale.completed_at)
         self.assertGreaterEqual(sale.completed_at, completion_started_at)
         self.assertLessEqual(sale.completed_at, timezone.now())
@@ -79,6 +81,11 @@ class SaleFlowTests(TestCase):
         )
         self.assertIsNotNone(
             detail_response.data['completed_at']
+        )
+        self.assertEqual(detail_response.data['sale_number'], 1)
+        self.assertEqual(
+            InventoryMovement.objects.get().note,
+            'Sale #1',
         )
 
         second_response = self.client.post(
@@ -114,6 +121,7 @@ class SaleFlowTests(TestCase):
         sale.refresh_from_db()
         self.variant.refresh_from_db()
         self.assertEqual(sale.status, Sale.StatusChoices.CANCELLED)
+        self.assertEqual(sale.sale_number, 1)
         self.assertEqual(self.variant.current_stock, 10)
         self.assertEqual(
             list(
@@ -146,6 +154,7 @@ class SaleFlowTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         sale.refresh_from_db()
         self.assertEqual(sale.status, Sale.StatusChoices.DRAFT)
+        self.assertIsNone(sale.sale_number)
 
     def test_insufficient_stock_rolls_back_entire_completion(self):
         second_product = create_product(self.store)
@@ -175,6 +184,7 @@ class SaleFlowTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         sale.refresh_from_db()
         self.assertIsNone(sale.completed_at)
+        self.assertIsNone(sale.sale_number)
         self.variant.refresh_from_db()
         second_variant.refresh_from_db()
         self.assertEqual(sale.status, Sale.StatusChoices.DRAFT)
@@ -245,6 +255,7 @@ class SaleFlowTests(TestCase):
         self.assertEqual(sale.status, Sale.StatusChoices.DRAFT)
 
         self.assertEqual(response.data['id'], sale.id)
+        self.assertIsNone(response.data['sale_number'])
         self.assertIsNone(response.data['customer'])
         self.assertEqual(
             response.data['channel'],
@@ -264,6 +275,48 @@ class SaleFlowTests(TestCase):
 
         self.assertIn('completed_at', response.data)
         self.assertIsNone(response.data['completed_at'])
+
+    def test_sale_numbers_are_sequential_within_each_store(self):
+        first_sale = create_sale(self.store, self.membership)
+        create_sale_item(first_sale, self.variant)
+        complete_sale(sale=first_sale, user=self.user)
+
+        second_sale = create_sale(self.store, self.membership)
+        create_sale_item(second_sale, self.variant)
+        complete_sale(sale=second_sale, user=self.user)
+
+        other_user = create_user()
+        other_store, other_membership = create_store(other_user)
+        other_product = create_product(other_store)
+        other_variant = create_variant(other_product, current_stock=1)
+        other_sale = create_sale(other_store, other_membership)
+        create_sale_item(other_sale, other_variant)
+        complete_sale(sale=other_sale, user=other_user)
+
+        first_sale.refresh_from_db()
+        second_sale.refresh_from_db()
+        other_sale.refresh_from_db()
+
+        self.assertEqual(first_sale.sale_number, 1)
+        self.assertEqual(second_sale.sale_number, 2)
+        self.assertEqual(other_sale.sale_number, 1)
+
+    def test_sale_number_is_unique_within_store(self):
+        create_sale(
+            self.store,
+            self.membership,
+            status=Sale.StatusChoices.COMPLETED,
+            sale_number=1,
+        )
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                create_sale(
+                    self.store,
+                    self.membership,
+                    status=Sale.StatusChoices.COMPLETED,
+                    sale_number=1,
+                )
 
     def test_sale_creation_requires_payment_method(self):
         response = self.client.post(
@@ -296,16 +349,22 @@ class SaleFlowTests(TestCase):
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], matching.id)
 
-    def test_sale_search_matches_id_customer_name_or_phone(self):
+    def test_sale_search_matches_number_customer_name_or_phone(self):
         customer = create_customer(
             self.store,
             full_name='Niloofar Moradi',
             phone_number='09351234567',
         )
-        matching = create_sale(self.store, self.membership, customer=customer)
+        matching = create_sale(
+            self.store,
+            self.membership,
+            customer=customer,
+            status=Sale.StatusChoices.COMPLETED,
+            sale_number=37,
+        )
         create_sale(self.store, self.membership)
 
-        for search in [str(matching.id), 'niloofar', '1234']:
+        for search in ['37', 'niloofar', '1234']:
             with self.subTest(search=search):
                 response = self.client.get('/api/v1/sales/', {'search': search})
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -928,3 +987,49 @@ class ConcurrentCheckoutTests(TransactionTestCase):
         self.assertEqual(statuses.count(Sale.StatusChoices.COMPLETED), 1)
         self.assertEqual(statuses.count(Sale.StatusChoices.DRAFT), 1)
         self.assertEqual(InventoryMovement.objects.count(), 1)
+
+    def test_concurrent_sales_receive_distinct_store_numbers(self):
+        user = create_user()
+        store, membership = create_store(user)
+        sales = []
+
+        for _ in range(2):
+            product = create_product(store)
+            variant = create_variant(product, current_stock=1)
+            sale = create_sale(store, membership)
+            create_sale_item(sale, variant)
+            sales.append(sale)
+
+        barrier = Barrier(2)
+        outcomes = []
+
+        def checkout(sale_id, user_id):
+            close_old_connections()
+            try:
+                barrier.wait()
+                completed_sale = complete_sale(
+                    sale=Sale.objects.get(pk=sale_id),
+                    user=User.objects.get(pk=user_id),
+                )
+                outcomes.append(completed_sale.sale_number)
+            finally:
+                close_old_connections()
+
+        threads = [
+            Thread(target=checkout, args=(sale.id, user.id))
+            for sale in sales
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertCountEqual(outcomes, [1, 2])
+        self.assertCountEqual(
+            Sale.objects.filter(store=store).values_list(
+                'sale_number',
+                flat=True,
+            ),
+            [1, 2],
+        )

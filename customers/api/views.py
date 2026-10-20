@@ -10,12 +10,21 @@ from customers.api.serializers import CustomerSerializer
 from sales.models import Sale
 from stores.services import get_current_membership, MembershipResolutionError
 from customers.permissions import CanManageCustomers
+from wanted.permissions import CanManageWanted
 
 
 class CustomerListCreateView(generics.ListCreateAPIView):
 
     serializer_class = CustomerSerializer
-    permission_classes = [IsAuthenticated, CanManageCustomers]
+    permission_classes = [
+        IsAuthenticated,
+        CanManageCustomers | CanManageWanted,
+    ]
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticated(), CanManageCustomers()]
+        return super().get_permissions()
 
 
     def _parse_positive_integer(self, value, param_name):

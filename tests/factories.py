@@ -133,6 +133,7 @@ def create_sale(store, seller, **overrides):
             Sale.PaymentChoices.CASH,
         ),
         status=status,
+        sale_number=overrides.get('sale_number'),
         total_amount=overrides.get(
             'total_amount',
             Decimal('0'),

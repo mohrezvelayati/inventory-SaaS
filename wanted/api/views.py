@@ -4,8 +4,13 @@ from rest_framework.exceptions import ValidationError
 from django.http import Http404
 from django.db.models import Q
 from datetime import datetime
+from django.shortcuts import get_object_or_404
 
-from wanted.api.serializers import WantedSerializer
+from wanted.api.serializers import (
+    WantedCreateSerializer,
+    WantedCustomerRequestSerializer,
+    WantedSerializer,
+)
 from wanted.models import WantedProduct
 from wanted.permissions import CanManageWanted
 from wanted.services import create_wanted
@@ -94,6 +99,11 @@ class WantedListCreateView(generics.ListCreateAPIView):
 
         return wanted_products.order_by('id')
 
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return WantedCreateSerializer
+        return WantedSerializer
+
     @staticmethod
     def _parse_positive_integer(value, name):
         if not value:
@@ -127,7 +137,30 @@ class WantedListCreateView(generics.ListCreateAPIView):
             product_name=serializer.validated_data['product_name'],
             brand=serializer.validated_data.get('brand', ''),
             size = serializer.validated_data['size'],
-            customer = serializer.validated_data.get('customer'),
+            customer = serializer.validated_data['customer'],
             user = self.request.user
         )
         serializer.instance = wanted_product
+
+
+class WantedCustomerRequestListView(generics.ListAPIView):
+    serializer_class = WantedCustomerRequestSerializer
+    permission_classes = [IsAuthenticated, CanManageWanted]
+
+    def get_queryset(self):
+        try:
+            membership = get_current_membership(self.request.user)
+        except MembershipResolutionError as error:
+            raise Http404("Store Not Found") from error
+
+        wanted_product = get_object_or_404(
+            WantedProduct,
+            id=self.kwargs["wanted_id"],
+            store=membership.store,
+        )
+
+        return (
+            wanted_product.customer_requests
+            .select_related("customer", "created_by")
+            .order_by("-created_at", "-id")
+        )

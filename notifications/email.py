@@ -9,9 +9,10 @@ class EmailDeliveryError(RuntimeError):
 
 
 def send_sale_completed_email(*, recipient_email, payload):
+    sale_number = payload.get("sale_number") or payload["sale_id"]
     message = (
         f"فروش جدید در {payload['store_name']}\n\n"
-        f"شماره فروش: {payload['sale_id']}\n"
+        f"شماره فروش: {sale_number}\n"
         f"مبلغ: {payload['total_amount']}\n"
         f"کانال فروش: {payload['channel_label']}\n"
         f"زمان تکمیل: {payload['completed_at']}\n"
