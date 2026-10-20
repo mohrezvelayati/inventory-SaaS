@@ -194,6 +194,7 @@ class SaleDetailView(generics.RetrieveDestroyAPIView):
         return (
             Sale.objects
             .filter(store=membership.store)
+            .select_related('customer')
             .prefetch_related('items__variant__product')
         )
 
@@ -260,6 +261,7 @@ class SaleListView(generics.ListAPIView):
 
         return (
             sales
+            .select_related("customer")
             .prefetch_related("items__variant__product")
             .order_by("-created_at", "-id")
         )

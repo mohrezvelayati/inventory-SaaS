@@ -444,7 +444,9 @@ Sale list supports `search` by customer or the store-scoped `sale_number`, plus
 `status`, `channel`, `date_from`, and `date_to`. The global `id` remains the
 internal identifier used by detail and mutation URLs.
 
-Sale responses include `sale_number` and `completed_at`. Both are `null` for
+Sale responses include the customer ID plus the read-only `customer_name`, so
+sales viewers can identify the customer without receiving customer-management
+access. They also include `sale_number` and `completed_at`. Both are `null` for
 drafts and are set atomically when checkout succeeds. Sale numbers start at 1
 independently inside each store and are protected by a database uniqueness
 constraint on `(store, sale_number)`.
