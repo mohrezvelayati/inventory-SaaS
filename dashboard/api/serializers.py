@@ -46,7 +46,7 @@ class InventoryOverviewSerializer(serializers.Serializer):
 
 class LowStockProductSerializer(serializers.Serializer):
     product_name = serializers.CharField()
-    size = serializers.CharField()
+    size = serializers.CharField(allow_null=True)
     current_stock = serializers.IntegerField()
 
 

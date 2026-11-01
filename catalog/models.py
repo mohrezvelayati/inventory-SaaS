@@ -36,7 +36,7 @@ class Product(models.Model):
 
 class ProductVariant(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
-    size = models.CharField(max_length=50)
+    size = models.CharField(max_length=50, null=True, blank=True)
     purchase_price = models.DecimalField(max_digits=12, decimal_places=0)
     sale_price = models.DecimalField(max_digits=12, decimal_places=0)
     current_stock = models.PositiveIntegerField(default=0)
@@ -45,8 +45,24 @@ class ProductVariant(models.Model):
 
 
     class Meta:
-        unique_together = ('product', 'size')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['product', 'size'],
+                condition=models.Q(size__isnull=False),
+                name='unique_product_variant_size',
+            ),
+            models.UniqueConstraint(
+                fields=['product'],
+                condition=models.Q(size__isnull=True),
+                name='unique_sizeless_variant_per_product',
+            ),
+        ]
+
+    @property
+    def without_size(self):
+        return self.size is None
 
     
     def __str__(self):
-        return f"{self.product.name} - {self.size}"
+        size_label = self.size if self.size is not None else 'No size'
+        return f"{self.product.name} - {size_label}"

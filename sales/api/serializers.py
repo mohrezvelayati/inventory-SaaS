@@ -9,7 +9,11 @@ from stores.services import get_current_membership, MembershipResolutionError
 
 class SaleItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='variant.product.name', read_only=True)
-    size = serializers.CharField(source='variant.size', read_only=True)
+    size = serializers.CharField(
+        source='variant.size',
+        read_only=True,
+        allow_null=True,
+    )
 
     class Meta:
         model = SaleItem
@@ -94,7 +98,11 @@ class SaleItemCreateSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(
         source='variant.product.name', read_only=True
     )
-    size = serializers.CharField(source='variant.size', read_only=True)
+    size = serializers.CharField(
+        source='variant.size',
+        read_only=True,
+        allow_null=True,
+    )
     unit_price = serializers.DecimalField(
         max_digits=12, decimal_places=0, read_only=True
     )
@@ -134,7 +142,11 @@ class SaleItemUpdateSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     variant = serializers.IntegerField(source='variant_id', read_only=True)
     product_name = serializers.CharField(source='variant.product.name', read_only=True)
-    size = serializers.CharField(source='variant.size', read_only=True)
+    size = serializers.CharField(
+        source='variant.size',
+        read_only=True,
+        allow_null=True,
+    )
     quantity = serializers.IntegerField(min_value=1, required=False)
     discount = serializers.DecimalField(max_digits=12, decimal_places=0, min_value=0, required=False)
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)

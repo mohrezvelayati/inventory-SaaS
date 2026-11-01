@@ -253,7 +253,7 @@ class ProductVariantCreateView(generics.CreateAPIView):
 
         variant = create_variant(
             product=product,
-            size=serializer.validated_data["size"],
+            size=serializer.validated_data['size'],
             purchase_price=serializer.validated_data["purchase_price"],
             sale_price=serializer.validated_data["sale_price"],
         )
@@ -298,11 +298,17 @@ class ProductVariantDetailView(generics.RetrieveUpdateDestroyAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store not found.') from error
         variant = self.get_object()
-        update_variant(
+        variant = update_variant(
             variant=variant,
-            size=serializer.validated_data['size'],
-            purchase_price=serializer.validated_data['purchase_price'],
-            sale_price=serializer.validated_data['sale_price'],
+            size=serializer.validated_data.get('size', variant.size),
+            purchase_price=serializer.validated_data.get(
+                'purchase_price',
+                variant.purchase_price,
+            ),
+            sale_price=serializer.validated_data.get(
+                'sale_price',
+                variant.sale_price,
+            ),
         )
         serializer.instance = variant
 

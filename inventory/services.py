@@ -108,6 +108,25 @@ def create_batch_purchase(
             .filter(product=product)
         )
     }
+
+    requested_sizes = {item['size'] for item in items}
+    requested_has_sizeless = None in requested_sizes
+    requested_has_sized = any(size is not None for size in requested_sizes)
+    existing_has_sizeless = None in variants_by_size
+    existing_has_sized = any(size is not None for size in variants_by_size)
+
+    if requested_has_sizeless and requested_has_sized:
+        raise ValidationError({
+            'items': 'A purchase cannot mix sized and sizeless variants.'
+        })
+    if (
+        (requested_has_sizeless and existing_has_sized)
+        or (requested_has_sized and existing_has_sizeless)
+    ):
+        raise ValidationError({
+            'items': 'A product cannot have both sized and sizeless variants.'
+        })
+
     movements = []
 
     for item in items:
@@ -116,7 +135,7 @@ def create_batch_purchase(
 
         if variant is None:
             if purchase_price is None or sale_price is None:
-                message = 'Purchase and sale prices are required for new sizes.'
+                message = 'Purchase and sale prices are required for new variants.'
                 raise ValidationError({
                     'purchase_price': message,
                     'sale_price': message,

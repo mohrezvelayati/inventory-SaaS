@@ -71,6 +71,7 @@ class CatalogApiTests(TestCase):
             [{
                 'id': variant.id,
                 'size': '42',
+                'without_size': False,
                 'purchase_price': '1000',
                 'sale_price': '1500',
                 'current_stock': 7,
@@ -117,6 +118,50 @@ class CatalogApiTests(TestCase):
         self.assertEqual(first_response.data['size'], '40')
         self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('size', duplicate_response.data)
+
+    def test_sizeless_variant_can_be_created_only_once(self):
+        product = create_product(self.store, name='Watch')
+
+        first_response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'without_size': True,
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+        duplicate_response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'without_size': True,
+                'purchase_price': 1100,
+                'sale_price': 1600,
+            },
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(first_response.data['size'])
+        self.assertTrue(first_response.data['without_size'])
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('size', duplicate_response.data)
+        self.assertEqual(product.variants.count(), 1)
+
+    def test_variant_requires_size_or_without_size(self):
+        product = create_product(self.store)
+
+        response = self.client.post(
+            f'/api/v1/catalog/product/{product.id}/variants/',
+            {
+                'purchase_price': 1000,
+                'sale_price': 1500,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('size', response.data)
 
     def test_blank_variant_size_is_field_error(self):
         product = create_product(self.store)

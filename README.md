@@ -34,10 +34,10 @@ in this environment.
 - Manager, seller, and admin roles with capability permissions
 - Secure phone-bound employee invitations
 - Store, profile, member, role, and capability management
-- Catalog APIs for categories, products, size variants, individual pricing,
+- Catalog APIs for categories, optional-size variants, individual pricing,
   bulk sale-price updates, search, filtering, and ordering
 - Cached stock balances backed by an inventory movement audit trail
-- Atomic batch purchase entry across existing and new product sizes
+- Atomic batch purchase entry across sized and sizeless products
 - Draft sales, editable line items, atomic checkout, and cancellation
 - Asynchronous sale-completion email notifications backed by a persistent
   outbox and bounded Celery retries
@@ -124,8 +124,11 @@ API View -> Serializer validation -> Service -> Model / PostgreSQL
 - Purchase quantities are positive.
 - Adjustments are non-zero and may be positive or negative.
 - Sale movements are negative and can only be created by checkout.
-- Batch purchase entry creates missing sizes when prices are supplied and
-  records every size quantity through the normal movement audit trail.
+- Batch purchase entry creates missing variants when prices are supplied and
+  records every quantity through the normal movement audit trail.
+- A product may use sized variants or one sizeless variant, never both.
+- Sizeless purchase items send `without_size: true`; their persisted and
+  returned `size` is `null` rather than an empty or invented size label.
 - A batch is atomic: if any item is invalid, no size, stock, or movement from
   that request is persisted.
 - The resulting stock may never become negative.
