@@ -89,6 +89,7 @@ class BatchInventoryPurchaseView(generics.GenericAPIView):
                     'movement': movement.id,
                     'variant': movement.variant_id,
                     'size': movement.variant.size,
+                    'without_size': movement.variant.without_size,
                     'quantity': movement.quantity,
                     'current_stock': movement.variant.current_stock,
                 }

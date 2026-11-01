@@ -7,6 +7,32 @@ from dashboard.cache import schedule_dashboard_cache_invalidation
 
 
 VARIANT_SIZE_DUPLICATE_ERROR = "A variant with this size already exists."
+VARIANT_MODE_ERROR = (
+    "A product cannot have both sized and sizeless variants."
+)
+
+
+def normalize_variant_size(size):
+    if size is None:
+        return None
+
+    normalized_size = size.strip()
+    if not normalized_size:
+        raise ValidationError({
+            'size': 'Size cannot be blank. Use without_size instead.'
+        })
+    return normalized_size
+
+
+def validate_variant_mode(*, product, size, exclude_variant_id=None):
+    variants = ProductVariant.objects.filter(product=product)
+    if exclude_variant_id is not None:
+        variants = variants.exclude(pk=exclude_variant_id)
+
+    if size is None and variants.filter(size__isnull=False).exists():
+        raise ValidationError({'size': VARIANT_MODE_ERROR})
+    if size is not None and variants.filter(size__isnull=True).exists():
+        raise ValidationError({'size': VARIANT_MODE_ERROR})
 
 
 def create_category(*, store, name):
@@ -34,10 +60,19 @@ def create_variant(
     sale_price,
     invalidate_dashboard=True,
 ):
+    size = normalize_variant_size(size)
+
     try:
         with transaction.atomic():
+            locked_product = Product.objects.select_for_update().get(
+                pk=product.pk,
+            )
+            validate_variant_mode(
+                product=locked_product,
+                size=size,
+            )
             variant = ProductVariant.objects.create(
-                product=product,
+                product=locked_product,
                 size=size,
                 purchase_price=purchase_price,
                 sale_price=sale_price,
@@ -80,12 +115,28 @@ def update_product_sale_price(*, product, sale_price):
 
 
 def update_variant(*, variant, size, purchase_price, sale_price):
-    variant.size = size
-    variant.purchase_price = purchase_price
-    variant.sale_price = sale_price
+    size = normalize_variant_size(size)
+
     try:
         with transaction.atomic():
-            variant.save(
+            locked_product = Product.objects.select_for_update().get(
+                pk=variant.product_id,
+            )
+            locked_variant = (
+                ProductVariant.objects
+                .select_for_update()
+                .select_related('product')
+                .get(pk=variant.pk, product=locked_product)
+            )
+            validate_variant_mode(
+                product=locked_product,
+                size=size,
+                exclude_variant_id=locked_variant.id,
+            )
+            locked_variant.size = size
+            locked_variant.purchase_price = purchase_price
+            locked_variant.sale_price = sale_price
+            locked_variant.save(
                 update_fields=[
                     'size',
                     'purchase_price',
@@ -98,6 +149,6 @@ def update_variant(*, variant, size, purchase_price, sale_price):
             'size': VARIANT_SIZE_DUPLICATE_ERROR,
         }) from error
 
-    schedule_dashboard_cache_invalidation(variant.product.store_id)
+    schedule_dashboard_cache_invalidation(locked_variant.product.store_id)
 
-    return variant
+    return locked_variant

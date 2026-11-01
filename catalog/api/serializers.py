@@ -38,22 +38,52 @@ class CategorySerializer(serializers.ModelSerializer):
         return name
 
 class ProductVariantSerializer(serializers.ModelSerializer):
+    size = serializers.CharField(
+        max_length=50,
+        trim_whitespace=True,
+        required=False,
+        allow_null=True,
+        allow_blank=False,
+    )
+    without_size = serializers.BooleanField(required=False, default=False)
+
     class Meta:
         model = ProductVariant
         fields = [
             'id',
             'size',
+            'without_size',
             'purchase_price',
             'sale_price',
             'current_stock',
         ]
         read_only_fields = ['id', 'current_stock']
 
-    def validate_size(self, value):
-        size = value.strip()
-        if not size:
-            raise serializers.ValidationError("Size cannot be blank.")
-        return size
+    def validate(self, attrs):
+        default_without_size = (
+            self.instance.size is None
+            if self.instance is not None
+            else False
+        )
+        without_size = attrs.pop('without_size', default_without_size)
+        size_was_provided = 'size' in attrs
+        size = attrs.get(
+            'size',
+            self.instance.size if self.instance is not None else None,
+        )
+
+        if without_size:
+            if size_was_provided and size is not None:
+                raise serializers.ValidationError({
+                    'size': 'Do not provide size when without_size is true.'
+                })
+            attrs['size'] = None
+        elif size is None:
+            raise serializers.ValidationError({
+                'size': 'Size is required when without_size is false.'
+            })
+
+        return attrs
 
 
 class ProductSerializer(serializers.ModelSerializer):

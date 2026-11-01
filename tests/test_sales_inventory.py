@@ -657,6 +657,126 @@ class InventoryApiTests(TestCase):
             {'New shipment'},
         )
 
+    def test_batch_purchase_creates_and_reuses_sizeless_variant(self):
+        product = create_product(self.store, name='Watch')
+
+        first_response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': product.id,
+                'purchase_price': 100,
+                'sale_price': 180,
+                'items': [
+                    {'without_size': True, 'quantity': 3},
+                ],
+            },
+            format='json',
+        )
+        second_response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': product.id,
+                'items': [
+                    {'without_size': True, 'quantity': 2},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second_response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(first_response.data['items'][0]['size'])
+        self.assertTrue(first_response.data['items'][0]['without_size'])
+
+        variant = ProductVariant.objects.get(product=product, size__isnull=True)
+        self.assertEqual(variant.current_stock, 5)
+        self.assertEqual(product.variants.count(), 1)
+        self.assertEqual(InventoryMovement.objects.filter(variant=variant).count(), 2)
+
+    def test_batch_purchase_rejects_conflicting_sizeless_input(self):
+        product = create_product(self.store, name='Watch')
+
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': product.id,
+                'purchase_price': 100,
+                'sale_price': 180,
+                'items': [
+                    {
+                        'without_size': True,
+                        'size': 'One size',
+                        'quantity': 1,
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(product.variants.exists())
+
+    def test_batch_purchase_rejects_mixed_variant_modes(self):
+        product = create_product(self.store, name='Accessory')
+
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': product.id,
+                'purchase_price': 100,
+                'sale_price': 180,
+                'items': [
+                    {'without_size': True, 'quantity': 1},
+                    {'size': 'Large', 'quantity': 1},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('items', response.data)
+        self.assertFalse(product.variants.exists())
+        self.assertEqual(InventoryMovement.objects.count(), 0)
+
+    def test_batch_purchase_rejects_sizeless_variant_for_sized_product(self):
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': self.product.id,
+                'purchase_price': 100,
+                'sale_price': 180,
+                'items': [
+                    {'without_size': True, 'quantity': 1},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.product.variants.count(), 1)
+        self.assertEqual(InventoryMovement.objects.count(), 0)
+
+    def test_batch_purchase_rejects_sized_variant_for_sizeless_product(self):
+        product = create_product(self.store, name='Accessory')
+        create_variant(product, size=None)
+
+        response = self.client.post(
+            '/api/v1/inventory/purchases/batch/',
+            {
+                'product': product.id,
+                'purchase_price': 100,
+                'sale_price': 180,
+                'items': [
+                    {'size': 'Large', 'quantity': 1},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(product.variants.count(), 1)
+        self.assertEqual(InventoryMovement.objects.count(), 0)
+
     def test_batch_purchase_is_atomic_when_new_size_has_no_prices(self):
         response = self.client.post(
             '/api/v1/inventory/purchases/batch/',

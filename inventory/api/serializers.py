@@ -65,13 +65,32 @@ class InventoryMovementCreateSerializer(serializers.ModelSerializer):
 
 
 class BatchPurchaseItemSerializer(serializers.Serializer):
-    size = serializers.CharField(max_length=50, trim_whitespace=True)
+    size = serializers.CharField(
+        max_length=50,
+        trim_whitespace=True,
+        required=False,
+        allow_null=True,
+        allow_blank=False,
+    )
+    without_size = serializers.BooleanField(required=False, default=False)
     quantity = serializers.IntegerField(min_value=1)
 
-    def validate_size(self, value):
-        if not value:
-            raise serializers.ValidationError('Size cannot be blank.')
-        return value
+    def validate(self, attrs):
+        without_size = attrs.pop('without_size', False)
+        size = attrs.get('size')
+
+        if without_size:
+            if size is not None:
+                raise serializers.ValidationError({
+                    'size': 'Do not provide size when without_size is true.'
+                })
+            attrs['size'] = None
+        elif size is None:
+            raise serializers.ValidationError({
+                'size': 'Size is required when without_size is false.'
+            })
+
+        return attrs
 
 
 class BatchInventoryPurchaseSerializer(serializers.Serializer):
@@ -103,7 +122,8 @@ class BatchInventoryPurchaseSerializer(serializers.Serializer):
 class BatchPurchaseResultItemSerializer(serializers.Serializer):
     movement = serializers.IntegerField()
     variant = serializers.IntegerField()
-    size = serializers.CharField()
+    size = serializers.CharField(allow_null=True)
+    without_size = serializers.BooleanField()
     quantity = serializers.IntegerField()
     current_stock = serializers.IntegerField()
 
@@ -125,6 +145,7 @@ class InventoryMovementHistorySerializer(serializers.ModelSerializer):
     variant_size = serializers.CharField(
         source='variant.size',
         read_only=True,
+        allow_null=True,
     )
     created_by_username = serializers.CharField(
         source='created_by.username',
