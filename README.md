@@ -34,15 +34,15 @@ in this environment.
 - Manager, seller, and admin roles with capability permissions
 - Secure phone-bound employee invitations
 - Store, profile, member, role, and capability management
-- Catalog APIs for categories, optional-size variants, individual pricing,
-  bulk sale-price updates, search, filtering, and ordering
+- Catalog APIs for categories, optional product images, optional-size variants,
+  individual pricing, bulk sale-price updates, search, filtering, and ordering
 - Cached stock balances backed by an inventory movement audit trail
 - Atomic batch purchase entry across sized and sizeless products
 - Draft sales, editable line items, atomic checkout, and cancellation
 - Asynchronous sale-completion email notifications backed by a persistent
   outbox and bounded Celery retries
 - Tenant-scoped customer management and search/filter by gender and age
-- Wanted-product demand aggregation and request auditing
+- Wanted-product demand aggregation with customer and optional image auditing
 - Dashboard metrics and financial/inventory reports
 - Pagination and OpenAPI/Swagger documentation
 - PostgreSQL-backed integration, tenant, permission, concurrency, schema, and
@@ -221,6 +221,18 @@ list for this picker, but customer mutations still require
 GET /api/v1/wanted/{wanted_id}/requests/
 ```
 
+Each wanted registration may include one optional `image` sent as
+`multipart/form-data`. The image belongs to that customer request rather than
+the aggregated wanted product. Request history returns `image: URL | null` for
+each row, so multiple customers can keep different reference images.
+Wanted list, detail, and create responses also include the read-only
+`cover_image`. It uses the newest non-empty customer-request image, falls back
+to the linked product image, and otherwise returns `null`.
+
+Product create and update requests accept one optional `image`. Send a file as
+`multipart/form-data`; send `image: null` in a PATCH request to clear it. The
+default upload limit is 5 MB. Existing products remain valid with `image: null`.
+
 ## Local Backend Setup
 
 Prerequisites:
@@ -278,6 +290,13 @@ Use `--limit=N` to control the batch size.
 Configuration is environment-based. Copy `.env.example` to `.env` for local
 overrides and never commit real secrets.
 
+Local product and wanted-request uploads use `MEDIA_ROOT`, and Docker Compose
+keeps them in the `media_data` volume. Django serves `/media/` only in
+development. Production must either mount a durable media path and serve it
+through the reverse proxy,
+or configure an external object-storage backend. A PostgreSQL backup contains
+only image paths, not the image files themselves.
+
 ## Verification
 
 ```bash
@@ -288,9 +307,9 @@ overrides and never commit real secrets.
   --file /tmp/inventory-openapi.yaml --validate
 ```
 
-Verified on 2026-10-19 with Python 3.12 and Django 5.2:
+Verified on 2026-11-23 with Python 3.12 and Django 5.2:
 
-- 168 Django tests passed against PostgreSQL
+- 194 Django tests passed against PostgreSQL
 - No pending model/migration changes
 - Django system check passed
 - OpenAPI validation reported zero errors

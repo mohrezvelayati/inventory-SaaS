@@ -45,6 +45,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+      - media_data:/app/media
 
   worker:
     build: .
@@ -82,3 +83,4 @@ services:
 
 volumes:
   postgres_data:
+  media_data:
