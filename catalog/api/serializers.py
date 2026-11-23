@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from catalog.models import Category, Product, ProductVariant
@@ -87,6 +88,10 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(
+        required=False,
+        allow_null=True,
+    )
     categories = serializers.PrimaryKeyRelatedField(
         source='category',
         queryset=Category.objects.none(),
@@ -101,6 +106,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'description',
+            'image',
             'categories',
             'variants',
             'created_at',
@@ -128,6 +134,18 @@ class ProductSerializer(serializers.ModelSerializer):
         self.fields['categories'].child_relation.queryset = (
             Category.objects.filter(store_id=membership.store_id)
         )
+
+    def validate_image(self, image):
+        if image is None:
+            return image
+
+        if image.size > settings.IMAGE_UPLOAD_MAX_SIZE_BYTES:
+            max_size_mb = settings.IMAGE_UPLOAD_MAX_SIZE_BYTES // (1024 * 1024)
+            raise serializers.ValidationError(
+                f'Image size cannot exceed {max_size_mb} MB.'
+            )
+
+        return image
 
 
 class ProductSalePriceUpdateSerializer(serializers.Serializer):

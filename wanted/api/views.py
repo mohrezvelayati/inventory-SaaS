@@ -2,7 +2,7 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from django.http import Http404
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from datetime import datetime
 from django.shortcuts import get_object_or_404
 
@@ -11,12 +11,27 @@ from wanted.api.serializers import (
     WantedCustomerRequestSerializer,
     WantedSerializer,
 )
-from wanted.models import WantedProduct
+from wanted.models import WantedCustomerRequest, WantedProduct
 from wanted.permissions import CanManageWanted
-from wanted.services import create_wanted
+from wanted.services import create_wanted, delete_wanted
 from stores.services import get_current_membership, MembershipResolutionError
 from dashboard.cache import schedule_dashboard_cache_invalidation
 
+
+
+def with_cover_image(queryset):
+    latest_request_image = (
+        WantedCustomerRequest.objects
+        .filter(wanted_product_id=OuterRef('pk'))
+        .exclude(image__isnull=True)
+        .exclude(image='')
+        .order_by('-created_at', '-id')
+        .values('image')[:1]
+    )
+
+    return queryset.select_related('product').annotate(
+        latest_request_image=Subquery(latest_request_image),
+    )
 
 
 class WantedProductDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -29,7 +44,9 @@ class WantedProductDetailView(generics.RetrieveUpdateDestroyAPIView):
             membership = get_current_membership(self.request.user)
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
-        return WantedProduct.objects.filter(store=membership.store)
+        return with_cover_image(
+            WantedProduct.objects.filter(store=membership.store)
+        )
 
     def perform_update(self, serializer):
         wanted_product = serializer.save()
@@ -38,9 +55,7 @@ class WantedProductDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
     def perform_destroy(self, instance):
-        store_id = instance.store_id
-        instance.delete()
-        schedule_dashboard_cache_invalidation(store_id)
+        delete_wanted(wanted_product=instance)
 
 
 class WantedListCreateView(generics.ListCreateAPIView):
@@ -54,8 +69,8 @@ class WantedListCreateView(generics.ListCreateAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store Not Found') from error
 
-        wanted_products = WantedProduct.objects.filter(
-            store=membership.store
+        wanted_products = with_cover_image(
+            WantedProduct.objects.filter(store=membership.store)
         )
 
         search = self.request.query_params.get('search', '').strip()
@@ -138,9 +153,15 @@ class WantedListCreateView(generics.ListCreateAPIView):
             brand=serializer.validated_data.get('brand', ''),
             size = serializer.validated_data['size'],
             customer = serializer.validated_data['customer'],
-            user = self.request.user
+            user = self.request.user,
+            image=serializer.validated_data.get('image'),
         )
-        serializer.instance = wanted_product
+        serializer.instance = with_cover_image(
+            WantedProduct.objects.filter(
+                id=wanted_product.id,
+                store=membership.store,
+            )
+        ).get()
 
 
 class WantedCustomerRequestListView(generics.ListAPIView):

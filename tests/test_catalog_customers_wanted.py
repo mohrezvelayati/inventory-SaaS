@@ -1,11 +1,17 @@
 from decimal import Decimal
+from io import BytesIO
+from tempfile import TemporaryDirectory
 from threading import Barrier, Thread
 
-from django.db import close_old_connections
-from django.test import TestCase, TransactionTestCase
+from PIL import Image
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import close_old_connections, connection
+from django.test import TestCase, TransactionTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
 
+from catalog.models import Product
 from customers.models import Customer
 from sales.models import Sale
 from stores.models import Store, StoreMembership
@@ -27,8 +33,26 @@ from wanted.models import WantedCustomerRequest, WantedProduct
 from wanted.services import create_wanted
 
 
+def create_uploaded_image(name='product.png'):
+    image_data = BytesIO()
+    Image.new('RGB', (2, 2), color='red').save(image_data, format='PNG')
+    return SimpleUploadedFile(
+        name,
+        image_data.getvalue(),
+        content_type='image/png',
+    )
+
+
 class CatalogApiTests(TestCase):
     def setUp(self):
+        self.media_directory = TemporaryDirectory()
+        self.addCleanup(self.media_directory.cleanup)
+        self.media_settings = override_settings(
+            MEDIA_ROOT=self.media_directory.name,
+        )
+        self.media_settings.enable()
+        self.addCleanup(self.media_settings.disable)
+
         self.user = create_user()
         self.store, _ = create_store(self.user)
         self.client = authenticated_client(self.user)
@@ -92,6 +116,120 @@ class CatalogApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['name'], 'Jordan 1 Celadon')
         self.assertEqual(response.data['variants'], [])
+
+    def test_product_can_be_created_with_an_image(self):
+        response = self.client.post(
+            '/api/v1/catalog/products/',
+            {
+                'name': 'Jordan 1 Celadon',
+                'description': 'Product with an image.',
+                'categories': [self.category.id],
+                'image': create_uploaded_image(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('/media/products/', response.data['image'])
+
+        product = Product.objects.get(id=response.data['id'])
+        self.assertTrue(product.image.name.startswith('products/'))
+        self.assertTrue(product.image.storage.exists(product.image.name))
+
+    def test_image_only_patch_preserves_product_fields_and_categories(self):
+        product = create_product(
+            self.store,
+            name='Original name',
+            description='Original description',
+            categories=[self.category],
+        )
+
+        response = self.client.patch(
+            f'/api/v1/catalog/products/{product.id}/',
+            {'image': create_uploaded_image('replacement.png')},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], 'Original name')
+        self.assertEqual(response.data['description'], 'Original description')
+        self.assertEqual(response.data['categories'], [self.category.id])
+        self.assertIn('/media/products/', response.data['image'])
+
+        product.refresh_from_db()
+        self.assertEqual(product.name, 'Original name')
+        self.assertEqual(product.description, 'Original description')
+        self.assertEqual(
+            list(product.category.values_list('id', flat=True)),
+            [self.category.id],
+        )
+
+    def test_product_image_can_be_cleared(self):
+        product = create_product(self.store)
+        product.image = create_uploaded_image()
+        product.save(update_fields=['image'])
+        image_name = product.image.name
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                f'/api/v1/catalog/products/{product.id}/',
+                {'image': None},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['image'])
+
+        product.refresh_from_db()
+        self.assertFalse(product.image)
+        self.assertFalse(product.image.storage.exists(image_name))
+
+    def test_deleting_product_deletes_its_image_after_commit(self):
+        product = create_product(self.store)
+        product.image = create_uploaded_image()
+        product.save(update_fields=['image'])
+        image_name = product.image.name
+        storage = product.image.storage
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(
+                f'/api/v1/catalog/products/{product.id}/'
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Product.objects.filter(id=product.id).exists())
+        self.assertFalse(storage.exists(image_name))
+
+    def test_product_rejects_a_non_image_upload(self):
+        response = self.client.post(
+            '/api/v1/catalog/products/',
+            {
+                'name': 'Invalid image product',
+                'image': SimpleUploadedFile(
+                    'not-an-image.png',
+                    b'not an image',
+                    content_type='image/png',
+                ),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', response.data)
+
+    @override_settings(IMAGE_UPLOAD_MAX_SIZE_BYTES=10)
+    def test_product_rejects_an_image_over_the_size_limit(self):
+        response = self.client.post(
+            '/api/v1/catalog/products/',
+            {
+                'name': 'Oversized image product',
+                'image': create_uploaded_image(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', response.data)
 
     def test_variant_size_is_trimmed_and_duplicate_is_field_error(self):
         product = create_product(self.store)
@@ -662,6 +800,14 @@ class CustomerApiTests(TestCase):
 
 class WantedApiTests(TestCase):
     def setUp(self):
+        self.media_directory = TemporaryDirectory()
+        self.addCleanup(self.media_directory.cleanup)
+        self.media_settings = override_settings(
+            MEDIA_ROOT=self.media_directory.name,
+        )
+        self.media_settings.enable()
+        self.addCleanup(self.media_settings.disable)
+
         self.user = create_user()
         self.store, _ = create_store(self.user)
         self.client = authenticated_client(self.user)
@@ -701,6 +847,293 @@ class WantedApiTests(TestCase):
         self.assertEqual(requests.count(), 2)
         self.assertTrue(requests.filter(customer=self.customer).exists())
         self.assertTrue(requests.filter(created_by=self.user).exists())
+
+    def test_wanted_request_image_is_returned_in_customer_history(self):
+        response = self.client.post(
+            '/api/v1/wanted/',
+            {
+                'product_name': 'Rare Shoe',
+                'brand': 'Brand X',
+                'size': '42',
+                'customer': self.customer.id,
+                'image': create_uploaded_image('reference.png'),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn(
+            '/media/wanted-requests/',
+            response.data['cover_image'],
+        )
+
+        wanted = WantedProduct.objects.get(
+            store=self.store,
+            product_name='Rare Shoe',
+            size='42',
+        )
+        customer_request = wanted.customer_requests.get()
+        self.assertTrue(
+            customer_request.image.name.startswith('wanted-requests/')
+        )
+        self.assertTrue(
+            customer_request.image.storage.exists(customer_request.image.name)
+        )
+
+        history_response = self.client.get(
+            f'/api/v1/wanted/{wanted.id}/requests/'
+        )
+
+        self.assertEqual(history_response.status_code, status.HTTP_200_OK)
+        self.assertIn(
+            '/media/wanted-requests/',
+            history_response.data['results'][0]['image'],
+        )
+
+        list_response = self.client.get('/api/v1/wanted/')
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            list_response.data['results'][0]['cover_image'],
+            response.data['cover_image'],
+        )
+
+    def test_wanted_cover_uses_latest_request_with_an_image(self):
+        wanted = create_wanted_product(self.store)
+        first_request = WantedCustomerRequest.objects.create(
+            wanted_product=wanted,
+            customer=self.customer,
+            created_by=self.user,
+            image=create_uploaded_image('first.png'),
+        )
+        second_request = WantedCustomerRequest.objects.create(
+            wanted_product=wanted,
+            customer=self.customer,
+            created_by=self.user,
+            image=create_uploaded_image('second.png'),
+        )
+        same_created_at = timezone.now()
+        WantedCustomerRequest.objects.filter(
+            id__in=[first_request.id, second_request.id]
+        ).update(created_at=same_created_at)
+
+        response = self.client.get('/api/v1/wanted/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertTrue(
+            response.data['results'][0]['cover_image'].endswith(
+                second_request.image.url
+            )
+        )
+
+    def test_wanted_cover_skips_newer_request_without_an_image(self):
+        wanted = create_wanted_product(self.store)
+        request_with_image = WantedCustomerRequest.objects.create(
+            wanted_product=wanted,
+            customer=self.customer,
+            created_by=self.user,
+            image=create_uploaded_image('reference.png'),
+        )
+        WantedCustomerRequest.objects.create(
+            wanted_product=wanted,
+            customer=self.customer,
+            created_by=self.user,
+            image=None,
+        )
+
+        response = self.client.get('/api/v1/wanted/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            response.data['results'][0]['cover_image'].endswith(
+                request_with_image.image.url
+            )
+        )
+
+    def test_wanted_cover_falls_back_to_linked_product_image(self):
+        self.product.image = create_uploaded_image('product-cover.png')
+        self.product.save(update_fields=['image'])
+        wanted = create_wanted_product(
+            self.store,
+            product=self.product,
+        )
+        WantedCustomerRequest.objects.create(
+            wanted_product=wanted,
+            customer=self.customer,
+            created_by=self.user,
+        )
+
+        response = self.client.get(f'/api/v1/wanted/{wanted.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            response.data['cover_image'].endswith(self.product.image.url)
+        )
+
+    def test_wanted_cover_is_null_without_request_or_product_image(self):
+        wanted = create_wanted_product(self.store)
+        WantedCustomerRequest.objects.create(
+            wanted_product=wanted,
+            customer=self.customer,
+            created_by=self.user,
+        )
+
+        response = self.client.get(f'/api/v1/wanted/{wanted.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['cover_image'])
+
+    def test_wanted_cover_does_not_expose_other_store_wanted_product(self):
+        other_store, _ = create_store()
+        other_wanted = create_wanted_product(other_store)
+        WantedCustomerRequest.objects.create(
+            wanted_product=other_wanted,
+            customer=create_customer(other_store),
+            image=create_uploaded_image('other-store.png'),
+        )
+
+        detail_response = self.client.get(
+            f'/api/v1/wanted/{other_wanted.id}/'
+        )
+        list_response = self.client.get('/api/v1/wanted/')
+
+        self.assertEqual(
+            detail_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertNotIn(
+            other_wanted.id,
+            [item['id'] for item in list_response.data['results']],
+        )
+
+    def test_wanted_list_cover_query_count_is_constant(self):
+        create_wanted_product(self.store)
+
+        with CaptureQueriesContext(connection) as one_wanted_queries:
+            one_response = self.client.get('/api/v1/wanted/')
+
+        for index in range(8):
+            wanted = create_wanted_product(
+                self.store,
+                product=self.product if index % 2 else None,
+            )
+            WantedCustomerRequest.objects.create(
+                wanted_product=wanted,
+                customer=self.customer,
+                created_by=self.user,
+                image=(
+                    create_uploaded_image(f'reference-{index}.png')
+                    if index % 2
+                    else None
+                ),
+            )
+
+        with CaptureQueriesContext(connection) as many_wanted_queries:
+            many_response = self.client.get('/api/v1/wanted/')
+
+        self.assertEqual(one_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(many_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            len(many_wanted_queries),
+            len(one_wanted_queries),
+        )
+
+    def test_each_customer_request_keeps_its_own_image(self):
+        payload = {
+            'product_name': 'Rare Shoe',
+            'brand': 'Brand X',
+            'size': '42',
+            'customer': self.customer.id,
+        }
+
+        first_response = self.client.post(
+            '/api/v1/wanted/',
+            {**payload, 'image': create_uploaded_image('first.png')},
+            format='multipart',
+        )
+        second_response = self.client.post(
+            '/api/v1/wanted/',
+            {**payload, 'image': create_uploaded_image('second.png')},
+            format='multipart',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second_response.status_code, status.HTTP_201_CREATED)
+
+        wanted = WantedProduct.objects.get(
+            store=self.store,
+            product_name='Rare Shoe',
+            size='42',
+        )
+        image_names = list(
+            wanted.customer_requests.order_by('id').values_list(
+                'image',
+                flat=True,
+            )
+        )
+
+        self.assertEqual(wanted.wanted_count, 2)
+        self.assertEqual(len(image_names), 2)
+        self.assertNotEqual(image_names[0], image_names[1])
+
+    def test_wanted_request_rejects_non_image_upload(self):
+        response = self.client.post(
+            '/api/v1/wanted/',
+            {
+                'product_name': 'Rare Shoe',
+                'size': '42',
+                'customer': self.customer.id,
+                'image': SimpleUploadedFile(
+                    'not-an-image.png',
+                    b'not an image',
+                    content_type='image/png',
+                ),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', response.data)
+
+    @override_settings(IMAGE_UPLOAD_MAX_SIZE_BYTES=10)
+    def test_wanted_request_rejects_image_over_size_limit(self):
+        response = self.client.post(
+            '/api/v1/wanted/',
+            {
+                'product_name': 'Rare Shoe',
+                'size': '42',
+                'customer': self.customer.id,
+                'image': create_uploaded_image(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', response.data)
+
+    def test_deleting_wanted_product_deletes_request_images_after_commit(self):
+        create_response = self.client.post(
+            '/api/v1/wanted/',
+            {
+                'product_name': 'Rare Shoe',
+                'size': '42',
+                'customer': self.customer.id,
+                'image': create_uploaded_image(),
+            },
+            format='multipart',
+        )
+        wanted = WantedProduct.objects.get(id=create_response.data['id'])
+        customer_request = wanted.customer_requests.get()
+        image_name = customer_request.image.name
+        storage = customer_request.image.storage
+
+        with self.captureOnCommitCallbacks(execute=True):
+            delete_response = self.client.delete(
+                f'/api/v1/wanted/{wanted.id}/'
+            )
+
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(storage.exists(image_name))
 
     def test_wanted_requires_customer(self):
         response = self.client.post(

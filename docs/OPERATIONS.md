@@ -39,6 +39,12 @@
 
 Do not treat a backup as valid until it has been restored.
 
+Product and wanted-request images are not stored inside PostgreSQL. A complete
+backup therefore contains both the PostgreSQL dump and the durable media
+storage (or an independently protected object-storage bucket). Never keep
+production uploads only in a container filesystem, and test restoring the
+database and its media as one recovery set.
+
 1. Upgrade PostgreSQL before the free database expiry and confirm managed PITR.
 2. Record the retention window and responsible owner.
 3. For a manual encrypted export, obtain the external URL without copying it to

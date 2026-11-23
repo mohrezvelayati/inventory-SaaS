@@ -45,6 +45,15 @@ class TenantIsolationTests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_cannot_clear_other_store_product_image(self):
+        response = self.client.patch(
+            f'/api/v1/catalog/products/{self.product_b.id}/',
+            {'image': None},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_cannot_retrieve_other_store_variant(self):
         response = self.client.get(
             f'/api/v1/catalog/variants/{self.variant_b.id}/'

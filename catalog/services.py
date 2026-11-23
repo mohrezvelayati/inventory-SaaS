@@ -1,9 +1,14 @@
+import logging
+
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 
 from catalog.models import Category, Product, ProductVariant
 from dashboard.cache import schedule_dashboard_cache_invalidation
+
+
+logger = logging.getLogger(__name__)
 
 
 VARIANT_SIZE_DUPLICATE_ERROR = "A variant with this size already exists."
@@ -43,13 +48,34 @@ def create_category(*, store, name):
     return category
 
 
-def create_product(*, store, name, description, categories):
+def create_product(*, store, name, description, categories, image=None):
     """
     Create a new product for a store.
     """
-    product = Product.objects.create(store=store, name=name, description=description)
+    product = Product.objects.create(
+        store=store,
+        name=name,
+        description=description,
+        image=image,
+    )
     product.category.set(categories)
     return product
+
+
+def _delete_stored_file_after_commit(file_field):
+    if not file_field or not file_field.name:
+        return
+
+    storage = file_field.storage
+    name = file_field.name
+
+    def delete_file():
+        try:
+            storage.delete(name)
+        except Exception:
+            logger.exception('Failed to delete replaced product image %s', name)
+
+    transaction.on_commit(delete_file)
 
 
 def create_variant(
@@ -88,16 +114,36 @@ def create_variant(
     return variant
 
 
-def update_product(*, product, name, description, categories):
-    product.name = name
-    product.description = description
-    product.save(update_fields=['name', 'description', 'updated_at'])
-    if categories is not None:
-        product.category.set(categories)
+def update_product(*, product, name, description, categories, image):
+    old_image = product.image
+    old_image_name = old_image.name if old_image else None
+
+    with transaction.atomic():
+        product.name = name
+        product.description = description
+        product.image = image
+        product.save(
+            update_fields=['name', 'description', 'image', 'updated_at']
+        )
+        if categories is not None:
+            product.category.set(categories)
+
+        if old_image_name and old_image_name != product.image.name:
+            _delete_stored_file_after_commit(old_image)
 
     schedule_dashboard_cache_invalidation(product.store_id)
 
     return product
+
+
+def delete_product(*, product):
+    store_id = product.store_id
+    image = product.image
+
+    with transaction.atomic():
+        product.delete()
+        _delete_stored_file_after_commit(image)
+        schedule_dashboard_cache_invalidation(store_id)
 
 
 def update_product_sale_price(*, product, sale_price):

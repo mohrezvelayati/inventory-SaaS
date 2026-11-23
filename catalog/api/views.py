@@ -21,6 +21,7 @@ from catalog.services import (
     create_category,
     create_product,
     create_variant,
+    delete_product,
     update_product,
     update_product_sale_price,
     update_variant,
@@ -159,7 +160,8 @@ class ProductListCreateView(generics.ListCreateAPIView):
             store=membership.store,
             name=serializer.validated_data['name'],
             description=serializer.validated_data.get('description', ''), # get description if provided, else default to empty string
-            categories=categories
+            categories=categories,
+            image=serializer.validated_data.get('image'),
         )
         
         serializer.instance = product  # Set the instance to the newly created product
@@ -183,19 +185,21 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
         except MembershipResolutionError as error:
             raise Http404('Store not found.') from error
         product = self.get_object()
-        categories = serializer.validated_data.get('category', [])
+        categories = serializer.validated_data.get('category')
         update_product(
             product=product,
-            name=serializer.validated_data['name'],
-            description=serializer.validated_data.get('description', ''),
+            name=serializer.validated_data.get('name', product.name),
+            description=serializer.validated_data.get(
+                'description',
+                product.description,
+            ),
             categories=categories,
+            image=serializer.validated_data.get('image', product.image),
         )
         serializer.instance = product
 
     def perform_destroy(self, instance):
-        store_id = instance.store_id
-        instance.delete()
-        schedule_dashboard_cache_invalidation(store_id)
+        delete_product(product=instance)
 
 
 class ProductSalePriceUpdateView(generics.GenericAPIView):

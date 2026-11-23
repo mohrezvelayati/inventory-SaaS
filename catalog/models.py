@@ -1,6 +1,14 @@
+from pathlib import Path
+from uuid import uuid4
+
 from django.db import models
 
 from stores.models import Store
+
+
+def product_image_upload_to(instance, filename):
+    extension = Path(filename).suffix.lower()
+    return f'products/{uuid4().hex}{extension}'
 
 
 
@@ -25,6 +33,11 @@ class Product(models.Model):
     category = models.ManyToManyField(Category, related_name='products', blank=True)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    image = models.ImageField(
+        upload_to=product_image_upload_to,
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
