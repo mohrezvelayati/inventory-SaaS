@@ -1,3 +1,6 @@
+from pathlib import Path
+from uuid import uuid4
+
 from django.db import models
 
 
@@ -5,6 +8,11 @@ from stores.models import Store
 from catalog.models import Product
 from customers.models import Customer
 from users.models import User
+
+
+def wanted_request_image_upload_to(instance, filename):
+    extension = Path(filename).suffix.lower()
+    return f'wanted-requests/{uuid4().hex}{extension}'
 
 
 
@@ -50,6 +58,11 @@ class WantedProduct(models.Model):
 class WantedCustomerRequest(models.Model):
     wanted_product = models.ForeignKey(WantedProduct, on_delete=models.CASCADE, related_name='customer_requests')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True)
+    image = models.ImageField(
+        upload_to=wanted_request_image_upload_to,
+        null=True,
+        blank=True,
+    )
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,

@@ -98,6 +98,11 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = os.getenv("MEDIA_URL", "/media/")
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
+IMAGE_UPLOAD_MAX_SIZE_BYTES = int(
+    os.getenv("IMAGE_UPLOAD_MAX_SIZE_BYTES", str(5 * 1024 * 1024))
+)
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {

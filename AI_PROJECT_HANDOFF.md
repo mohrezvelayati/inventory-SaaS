@@ -1,6 +1,6 @@
 # Inventory SaaS — AI Project Handoff
 
-Last verified: 2026-10-19
+Last verified: 2026-11-23
 Backend repository: `mohrezvelayati/inventory-SaaS`
 Frontend repository: `mohrezvelayati/inventory-saas-frontend`
 
@@ -417,6 +417,13 @@ in one database operation. A product without variants returns a field-level
 400 error. Purchase prices, historical `SaleItem` price snapshots, and the
 existing per-variant update endpoint remain unchanged.
 
+Products have one optional image. Product create/update accepts the image as
+`multipart/form-data`; PATCH with `image: null` clears it. The API validates
+that the upload is an image and enforces a configurable 5 MB default limit.
+Replacing, clearing, or deleting a product removes the previous file only
+after the database transaction commits. PostgreSQL stores the image path, not
+the file, so production media storage must be durable and backed up separately.
+
 ### Inventory
 
 | Method | Path | Notes |
@@ -477,6 +484,20 @@ COMPLETED sales (DRAFT/CANCELLED sales are excluded; customers with none get
 query filter, and an inclusive `age` range via `age_min`/`age_max` (either
 bound is optional). Invalid values (`gender` outside `male`/`female`,
 non-integer age bounds, or `age_min` greater than `age_max`) return 400.
+
+Each wanted registration may carry one optional reference image. The image is
+stored on `WantedCustomerRequest`, not on the aggregated `WantedProduct`, so
+each customer request preserves its own evidence. Create requests with files
+use `multipart/form-data`; customer-request history returns `image: URL | null`.
+The shared upload limit defaults to 5 MB, and deleting the aggregate removes
+its request images only after the database transaction commits.
+
+Wanted list, detail, and create responses expose a read-only `cover_image` for
+card display without moving image ownership to `WantedProduct`. The cover is
+the newest non-empty `WantedCustomerRequest.image`, ordered by `created_at`
+then `id` descending; it falls back to the linked `Product.image`, then to
+`null`. The list queryset uses a subquery plus the product join, so serialization
+does not add one query per Wanted row.
 
 Dashboard/report dates use `YYYY-MM-DD`. Report range is limited by
 `DASHBOARD_MAX_DATE_RANGE_DAYS` (currently 90).
@@ -778,9 +799,9 @@ npm run lint
 npm run build
 ```
 
-At last backend verification on 2026-10-19:
+At last backend verification on 2026-11-23:
 
-- Django: 168/168 tests passed
+- Django: 194/194 tests passed
 - Migration drift check: no changes detected
 - `stores.0007_store_invitation_and_default_permissions` applied locally
 - OpenAPI validation: zero errors and three non-blocking enum-name collision
